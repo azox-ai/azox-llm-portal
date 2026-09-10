@@ -120,7 +120,15 @@ export default async function accountRoutes(app, { db, config, adapters, oauthFe
     db.prepare('DELETE FROM oauth_states WHERE expires_at <= CURRENT_TIMESTAMP').run();
     db.prepare('INSERT INTO oauth_states (state_hash, user_id, provider, verifier, expires_at) VALUES (?, ?, ?, ?, ?)')
       .run(hashToken(state), request.user.id, provider, verifier, expires);
-    return reply.send({ url: buildAuthorizeUrl(providerConfig, { state, verifier }) });
+    return reply.send({
+      url: buildAuthorizeUrl(providerConfig, { state, verifier }),
+      provider,
+      // The modal renders a provider-accurate step 2: Claude's manual flow
+      // shows `code#state` in the browser, Codex redirects to its fixed
+      // localhost:1455 callback which the operator copies out of the address bar.
+      redirectUri: providerConfig.redirectUri,
+      expiresInMinutes: config.oauthStateMinutes,
+    });
   });
 
   app.get('/api/oauth/:provider/callback', async (request, reply) => {

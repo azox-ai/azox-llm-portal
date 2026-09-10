@@ -11,12 +11,21 @@ test('client bundle parses and exposes the three product surfaces', () => {
   for (const label of ['Providers', 'Quota Tracker', 'Admin']) assert.match(appScript, new RegExp(label));
   assert.doesNotMatch(appScript, /Tạo tài khoản mới|Sponsored accounts|OmniRoute/);
   assert.match(appScript, /Read-only/);
+  assert.match(appScript, /Step 1: Open OAuth URL|Open OAuth URL in browser/);
+  assert.match(appScript, /Paste full Codex callback URL/);
+  assert.match(appScript, /Admin login/);
+  assert.match(appScript, /Reset password/);
+  assert.match(appScript, /Remove user/);
+  assert.doesNotMatch(appScript, /window\.prompt/);
 });
 
 test('served assets contain the 9Router-inspired portal shell', () => {
-  assert.match(renderApp(), /<aside>/);
-  assert.match(renderApp(), /Account Operations/);
+  assert.match(renderApp(), /<aside class="sidebar">/);
+  assert.match(renderApp(), /id="modal-root"/);
+  assert.match(renderApp(), /LLM Portal/);
   assert.match(styles, /\.nav-item/);
+  assert.match(styles, /--brand:#E56A4A/);
+  assert.match(styles, /\.modal-overlay/);
   for (const status of ['active', 'disabled', 'failed', 'needs_reauth', 'pending']) {
     assert.match(styles, new RegExp('\\.badge\\.' + status + '\\b'));
   }

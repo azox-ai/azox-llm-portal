@@ -19,8 +19,7 @@ export default async function authRoutes(app, { db, config }) {
     return session;
   }
 
-  app.post('/api/login', { config: { rateLimit: { max: 10, timeWindow: '5 minutes' } } }, async (request, reply) => {
-    const { username, password } = request.body ?? {};
+  async function authenticate(request, reply, username, password) {
     const user = typeof username === 'string'
       ? db.prepare('SELECT * FROM users WHERE username = ?').get(username)
       : null;
@@ -36,10 +35,20 @@ export default async function authRoutes(app, { db, config }) {
     const session = issue(reply, user.id);
     audit(db, { actorId: user.id, action: 'user.login', targetType: 'user', targetId: user.id, ip: request.ip });
     return reply.send({
+      id: user.id,
       username: user.username,
       role: user.role,
       csrfToken: session.csrf,
     });
+  }
+
+  app.post('/api/login', { config: { rateLimit: { max: 10, timeWindow: '5 minutes' } } }, async (request, reply) => {
+    const { username, password } = request.body ?? {};
+    return authenticate(request, reply, username, password);
+  });
+
+  app.post('/api/login/admin', { config: { rateLimit: { max: 10, timeWindow: '5 minutes' } } }, async (request, reply) => {
+    return authenticate(request, reply, config.initialAdminUsername, request.body?.password);
   });
 
   app.post('/api/logout', async (request, reply) => {
@@ -52,6 +61,7 @@ export default async function authRoutes(app, { db, config }) {
   app.get('/api/me', async (request, reply) => {
     if (!request.user) return reply.code(401).send({ error: 'Not authenticated' });
     return reply.send({
+      id: request.user.id,
       username: request.user.username,
       role: request.user.role,
       csrfToken: request.user.csrf_token,

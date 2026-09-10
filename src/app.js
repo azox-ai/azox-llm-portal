@@ -87,7 +87,7 @@ export async function buildApp(options = {}) {
 
   await app.register(authRoutes, { db, config });
   await app.register(accountRoutes, { db, config, adapters, oauthFetch: options.oauthFetch });
-  await app.register(adminRoutes, { db });
+  await app.register(adminRoutes, { db, adapters });
 
   const stopRefreshScheduler = options.startScheduler === false
     ? () => {}

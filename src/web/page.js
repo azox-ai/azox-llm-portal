@@ -4,19 +4,21 @@ export function renderApp() {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
 <title>AZOX LLM Portal</title>
 <link rel="stylesheet" href="/styles.css">
 </head>
-<body>
-<aside>
-  <div class="brand"><div class="brand-mark">A</div><div><strong>LLM Portal</strong><small>AZOX AI</small></div></div>
+<body class="signed-out">
+<aside class="sidebar">
+  <div class="brand"><div class="brand-mark">9</div><div><strong>LLM Portal</strong><small>Account gateway</small></div></div>
   <nav id="nav"></nav>
-  <div class="aside-foot">Portal owns canonical credentials</div>
+  <div class="sidebar-note"><span class="status-dot"></span>Portal owns credentials</div>
 </aside>
 <div class="workspace">
-<header><div><span class="eyebrow">LLM GATEWAY</span><h1>Account Operations</h1></div><div id="session"></div></header>
-<main id="main"></main>
+  <header class="topbar"><div><span class="eyebrow">LLM GATEWAY</span><h1 id="page-title">Providers</h1></div><div id="session"></div></header>
+  <main id="main"></main>
 </div>
+<div id="modal-root"></div>
 <script type="module" src="/app.js"></script>
 </body>
 </html>`;

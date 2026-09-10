@@ -6,6 +6,10 @@ Internal account portal for the `llm-gateway` Docker stack.
 
 - Providers: Claude and Codex OAuth only.
 - Admin-created username/password users; users may change password at any time.
+- Admin surface mirrors the 9Router dashboard: create user, reset a chosen
+  password, disable/enable, and remove a user with its router connections.
+- Login has two tabs like 9Router: username/password for users, and an
+  admin-password form that signs in as `INIT_ADMIN_USERNAME`.
 - Provider accounts are strictly owner-scoped, including for administrators.
 - Quota Tracker reads upstream quota and exposes no state-changing actions.
 - Portal is the canonical credential owner. It refreshes one hour before expiry,
@@ -16,12 +20,14 @@ Internal account portal for the `llm-gateway` Docker stack.
 
 ## Adding a provider account
 
-OAuth uses a manual callback because `llm-gateway-9router` owns ports 1455 and
-54545 on this host. The portal opens the vendor authorize page in a new tab and
-the operator pastes the result back: Claude returns `code#state` in the browser,
-Codex redirects to `http://localhost:1455/auth/callback?...` which is copied
-whole from the address bar. `POST /api/oauth/:provider/complete` then performs
-the PKCE exchange server-side.
+The Connect dialog reproduces the two-step 9Router `OAuthModal`: step 1 opens a
+popup on the vendor authorize URL (with copy and re-open buttons when the popup
+is blocked), step 2 accepts the pasted callback. The flow is manual because
+`llm-gateway-9router` owns ports 1455 and 54545 on this host, so the portal
+never listens for the redirect. Claude shows `code#state` in the browser; Codex
+redirects to `http://localhost:1455/auth/callback?...`, which is copied whole
+from the address bar. `POST /api/oauth/:provider/complete` then performs the
+PKCE exchange server-side.
 
 ## Credential sync contract
 

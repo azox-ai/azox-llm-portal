@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { hashPassword, destroyUserSessions } from '../services/auth.js';
 import { validUsername, validPassword } from '../lib/validation.js';
 import { audit } from '../services/audit.js';
+import { removeAccount } from '../services/sync.js';
 
 function requireAdmin(request, reply) {
   if (!request.user) { reply.code(401).send({ error: 'Not authenticated' }); return false; }
@@ -9,7 +10,7 @@ function requireAdmin(request, reply) {
   return true;
 }
 
-export default async function adminRoutes(app, { db }) {
+export default async function adminRoutes(app, { db, adapters }) {
   app.get('/api/admin/users', async (request, reply) => {
     if (!requireAdmin(request, reply)) return reply;
     return db.prepare(`
@@ -59,7 +60,11 @@ export default async function adminRoutes(app, { db }) {
     if (!requireAdmin(request, reply)) return reply;
     const user = db.prepare('SELECT id, username FROM users WHERE id = ?').get(request.params.id);
     if (!user) return reply.code(404).send({ error: 'User not found' });
-    const temporary = randomBytes(12).toString('base64url');
+    const requestedPassword = request.body?.password;
+    if (requestedPassword !== undefined && !validPassword(requestedPassword)) {
+      return reply.code(400).send({ error: 'Password must be at least 12 characters' });
+    }
+    const temporary = requestedPassword || randomBytes(12).toString('base64url');
     db.prepare(`
       UPDATE users SET password_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
     `).run(await hashPassword(temporary), user.id);
@@ -67,7 +72,40 @@ export default async function adminRoutes(app, { db }) {
     audit(db, {
       actorId: request.user.id, action: 'admin.reset_password', targetType: 'user', targetId: user.id, ip: request.ip,
     });
-    return reply.send({ username: user.username, temporaryPassword: temporary });
+    return reply.send({
+      username: user.username,
+      ...(requestedPassword ? {} : { temporaryPassword: temporary }),
+    });
+  });
+
+  app.delete('/api/admin/users/:id', async (request, reply) => {
+    if (!requireAdmin(request, reply)) return reply;
+    const user = db.prepare('SELECT id, username, role FROM users WHERE id = ?').get(request.params.id);
+    if (!user) return reply.code(404).send({ error: 'User not found' });
+    if (user.id === request.user.id) return reply.code(409).send({ error: 'Cannot remove your own account' });
+    if (user.role === 'admin') {
+      const remaining = db.prepare("SELECT COUNT(*) AS n FROM users WHERE role = 'admin' AND disabled = 0 AND id != ?")
+        .get(user.id).n;
+      if (remaining === 0) return reply.code(409).send({ error: 'Cannot remove the last active admin' });
+    }
+
+    const accounts = db.prepare('SELECT id FROM provider_accounts WHERE owner_id = ? ORDER BY id').all(user.id);
+    for (const account of accounts) {
+      const result = await removeAccount(db, adapters, account.id);
+      if (!result.removed) {
+        audit(db, {
+          actorId: request.user.id, action: 'admin.remove_user_failed', targetType: 'user', targetId: user.id,
+          detail: result.failures.map((failure) => failure.router).join(','), ip: request.ip,
+        });
+        return reply.code(502).send({ error: 'Could not remove user accounts from every router', failures: result.failures });
+      }
+    }
+    db.prepare('DELETE FROM users WHERE id = ?').run(user.id);
+    audit(db, {
+      actorId: request.user.id, action: 'admin.remove_user', targetType: 'user', targetId: user.id,
+      detail: user.username, ip: request.ip,
+    });
+    return reply.code(204).send();
   });
 
   app.patch('/api/admin/users/:id', async (request, reply) => {

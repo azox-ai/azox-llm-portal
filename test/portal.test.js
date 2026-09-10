@@ -38,6 +38,32 @@ test('self-registration is absent and an admin creates users without forced pass
   assert.equal(alice.response.json().mustChangePassword, undefined);
 });
 
+test('admin resets a chosen password and removes a user from routers first', async (t) => {
+  const { app, db, config, adapters } = await testApp();
+  t.after(() => { app.close(); db.close(); });
+  const admin = await session(app, db, 'admin', 'admin');
+  const userId = await seedUser(db, 'remove-me');
+  const account = db.prepare(`INSERT INTO provider_accounts
+    (owner_id, provider, upstream_subject, display_name, credential_envelope)
+    VALUES (?, 'claude', 'remove-sub', 'Claude', ?)`)
+    .run(userId, encryptJson({ accessToken: 'a', refreshToken: 'r' }, config.encryptionKey));
+
+  const reset = await app.inject({
+    method: 'POST', url: `/api/admin/users/${userId}/reset-password`, headers: authHeaders(admin),
+    payload: { password: 'new correct horse battery' },
+  });
+  assert.equal(reset.statusCode, 200);
+  assert.equal(reset.json().temporaryPassword, undefined);
+  assert.equal((await login(app, 'remove-me', 'new correct horse battery')).response.statusCode, 200);
+
+  const removed = await app.inject({
+    method: 'DELETE', url: `/api/admin/users/${userId}`, headers: authHeaders(admin),
+  });
+  assert.equal(removed.statusCode, 204);
+  assert.deepEqual(adapters.ninerouter.calls.at(-1), ['remove', Number(account.lastInsertRowid)]);
+  assert.equal(db.prepare('SELECT id FROM users WHERE id = ?').get(userId), undefined);
+});
+
 test('users only see provider accounts they own, including administrators', async (t) => {
   const { app, db, config } = await testApp();
   t.after(() => { app.close(); db.close(); });
