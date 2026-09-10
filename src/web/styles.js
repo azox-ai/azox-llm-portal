@@ -128,7 +128,7 @@ tr:hover td{background:var(--bg-alt)}
 .sponsor-group .panel-head{align-items:center}
 .sponsor-count{font-size:11px;color:var(--muted);border:1px solid var(--border);border-radius:999px;padding:3px 10px}
 .sponsor-group table{table-layout:fixed;width:100%}
-.sponsor-account-col{width:48%}.sponsor-provider-col{width:22%}.sponsor-state-col{width:15%}.sponsor-router-col{width:15%}
+.sponsor-account-col{width:42%}.sponsor-provider-col{width:20%}.sponsor-state-col{width:14%}.sponsor-router-col{width:12%}
 
 /* ---------------------------------------------------------------- modal */
 .modal-overlay{position:fixed;inset:0;z-index:50;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(0,0,0,.5);backdrop-filter:blur(2px)}

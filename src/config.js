@@ -85,6 +85,11 @@ export function loadConfig(overrides = {}) {
         baseUrl: process.env.NINEROUTER_URL || '',
         syncToken: process.env.NINEROUTER_SYNC_TOKEN || '',
       },
+      omniroute: {
+        name: 'omniroute',
+        baseUrl: process.env.OMNIROUTE_URL || '',
+        syncToken: process.env.OMNIROUTE_SYNC_TOKEN || '',
+      },
     },
     ...overrides,
   };

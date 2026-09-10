@@ -22,7 +22,8 @@ test('client bundle parses and merges quota into the providers surface', () => {
   assert.doesNotMatch(appScript, /Flow OAuth hai bước giống 9Router/);
   assert.doesNotMatch(appScript, /Quota hiển thị ngay dưới mỗi account/);
   assert.match(appScript, /sponsorsView/);
-  assert.doesNotMatch(appScript, /Tạo tài khoản mới|OmniRoute/);
+  assert.doesNotMatch(appScript, /Tạo tài khoản mới/);
+  assert.match(appScript, /OmniRoute/);
   assert.match(appScript, /Sponsored by: /);
   assert.match(appScript, /Step 1: Open OAuth URL|Open OAuth URL in browser/);
   assert.match(appScript, /Paste full Codex callback URL/);

@@ -148,5 +148,6 @@ export class RouterAdapter {
 export function buildAdapters(config, fetchImpl = fetch) {
   return {
     ninerouter: new RouterAdapter('ninerouter', config.routers.ninerouter, fetchImpl),
+    omniroute: new RouterAdapter('omniroute', config.routers.omniroute, fetchImpl),
   };
 }

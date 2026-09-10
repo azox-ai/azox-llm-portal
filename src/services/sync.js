@@ -2,7 +2,7 @@ import { decryptJson } from '../lib/crypto.js';
 import { safeError } from '../lib/validation.js';
 import { decodeJwtPayload } from '../oauth/client.js';
 
-export const ROUTERS = ['ninerouter'];
+export const ROUTERS = ['ninerouter', 'omniroute'];
 
 function upsertConnection(db, accountId, router, patch) {
   db.prepare(`

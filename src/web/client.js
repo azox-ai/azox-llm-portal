@@ -113,21 +113,22 @@ function providersView() {
     'Sponsored by: ' + esc(account.owner) + '</small></div></div></td><td>' + esc(account.provider === 'claude' ? 'Claude Code' : 'Codex') +
     '</td><td>' + statusBadge(account.status) + '</td><td>' +
     statusBadge(account.routers.ninerouter?.status || 'pending') + '</td><td>' +
+    statusBadge(account.routers.omniroute?.status || 'pending') + '</td><td>' +
     (account.accessExpiresAt ? new Date(account.accessExpiresAt).toLocaleString() : '—') + '</td><td class="actions">' +
     '<button data-toggle="' + account.id + '" data-enabled="' + (account.enabled ? '0' : '1') + '">' +
     (account.enabled ? 'Disable' : 'Enable') + '</button><button data-retry="' + account.id + '">Sync</button>' +
     '<button data-reauth="' + esc(account.provider) + '">Re-auth</button>' +
     '<button class="danger" data-remove-account="' + account.id + '">Delete</button></td></tr>' +
     // Quota Tracker lives here now: the same row it belongs to, read-only.
-    '<tr class="quota-row"><td colspan="6">' + quotaStrip(account) + '</td></tr>').join('');
-  const configured = state.routers.ninerouter?.configured;
-  return (!configured ? '<div class="notice bad">9Router sync chưa được cấu hình.</div>' : '') +
+    '<tr class="quota-row"><td colspan="7">' + quotaStrip(account) + '</td></tr>').join('');
+  const missingRouters = ['ninerouter', 'omniroute'].filter((router) => !state.routers[router]?.configured);
+  return (missingRouters.length ? '<div class="notice bad">Router sync chưa được cấu hình: ' + esc(missingRouters.join(', ')) + '.</div>' : '') +
     '<div class="panel"><div class="panel-head"><div><h2>Add provider</h2></div></div>' +
     '<div class="grid-cards">' + providerCard('claude', 'Claude Code', 'Anthropic OAuth account') +
     providerCard('codex', 'Codex', 'OpenAI ChatGPT OAuth account') + '</div></div>' +
     '<div class="panel"><div class="panel-head"><div><h2>Connections</h2></div></div>' +
     (rows ? '<div class="table-wrap"><table><thead><tr><th>Account</th><th>Provider</th><th>State</th>' +
-      '<th>9Router</th><th>Access token expires</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div>' :
+      '<th>9Router</th><th>OmniRoute</th><th>Access token expires</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div>' :
       '<div class="empty">No provider connections yet.</div>') + '</div>';
 }
 
@@ -150,12 +151,13 @@ function sponsorsView() {
     const rows = sponsor.accounts.map((account) => '<tr><td><div class="account-name">' +
       providerIcon(account.provider) + '<div><strong>' + esc(account.displayName) + '</strong></div></div></td>' +
       '<td>' + esc(account.provider === 'claude' ? 'Claude Code' : 'Codex') + '</td>' +
-      '<td>' + statusBadge(account.status) + '</td><td>' + statusBadge(account.routers.ninerouter?.status || 'pending') + '</td></tr>').join('');
+      '<td>' + statusBadge(account.status) + '</td><td>' + statusBadge(account.routers.ninerouter?.status || 'pending') + '</td>' +
+      '<td>' + statusBadge(account.routers.omniroute?.status || 'pending') + '</td></tr>').join('');
     return '<div class="panel sponsor-group"><div class="panel-head"><div><h2>' + esc(sponsor.username) +
       '</h2></div><span class="sponsor-count">' + sponsor.accounts.length + ' accounts</span></div>' +
       '<div class="table-wrap"><table><colgroup><col class="sponsor-account-col"><col class="sponsor-provider-col">' +
-      '<col class="sponsor-state-col"><col class="sponsor-router-col"></colgroup>' +
-      '<thead><tr><th>Account</th><th>Provider</th><th>State</th><th>9Router</th></tr></thead>' +
+      '<col class="sponsor-state-col"><col class="sponsor-router-col"><col class="sponsor-router-col"></colgroup>' +
+      '<thead><tr><th>Account</th><th>Provider</th><th>State</th><th>9Router</th><th>OmniRoute</th></tr></thead>' +
       '<tbody>' + rows + '</tbody></table></div></div>';
   }).join('');
   return groups || '<div class="panel empty">No sponsors available.</div>';
@@ -316,10 +318,10 @@ function bind() {
   document.querySelectorAll('[data-retry]').forEach((element) => { element.onclick = () => act(element, async () => {
     const result = await api('/api/accounts/' + element.dataset.retry + '/retry', { method: 'POST' });
     await refresh();
-    notify('9Router state: ' + (result.routers?.ninerouter || 'unknown'), 'ok');
+    notify('9Router: ' + (result.routers?.ninerouter || 'unknown') + ' · OmniRoute: ' + (result.routers?.omniroute || 'unknown'), 'ok');
   }); });
   document.querySelectorAll('[data-remove-account]').forEach((element) => { element.onclick = () => act(element, async () => {
-    if (!confirm('Delete account from Portal and 9Router?')) return;
+    if (!confirm('Delete account from Portal, 9Router, and OmniRoute?')) return;
     await api('/api/accounts/' + element.dataset.removeAccount, { method: 'DELETE' }); await refresh();
   }); });
   document.querySelectorAll('[data-reset-user]').forEach((element) => { element.onclick = () => {

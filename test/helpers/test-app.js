@@ -43,8 +43,10 @@ export async function testApp(overrides = {}) {
     },
     ...overrides.config,
   });
-  const adapters = overrides.adapters || {
+  const adapters = {
     ninerouter: fakeAdapter('nine'),
+    omniroute: fakeAdapter('omni'),
+    ...overrides.adapters,
   };
   const built = await buildApp({ db, config, adapters, logger: false, oauthFetch: overrides.oauthFetch, startScheduler: false });
   return { ...built, adapters };
