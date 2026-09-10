@@ -46,7 +46,7 @@ function passwordView() {
 function routerCell(account, key) {
   const info = account.routers[key];
   if (!info) return '<span class="badge pending">pending</span>';
-  // `unsupported` is a capability gap, not a fault the sponsor can retry away,
+  // "unsupported" is a capability gap, not a fault the sponsor can retry away,
   // so it gets its own tooltip instead of the raw error string.
   const hint = info.status === 'unsupported'
     ? 'Router này chưa có đường nạp credential cho provider ' + account.provider + '. Retry không khắc phục được.'
