@@ -122,6 +122,27 @@ export class RouterAdapter {
       if (error.statusCode !== 404) throw error;
     }
   }
+
+  /**
+   * Read the router's own view of the connection. An operator can flip a
+   * connection on or off directly in the router UI, so the router — not the
+   * portal — is the source of truth for the enabled flag.
+   */
+  async status(account) {
+    try {
+      const body = await this.request(this.#path(account), 'GET');
+      if (!body?.found) return { found: false };
+      return {
+        found: true,
+        enabled: body.enabled !== false,
+        expiresAt: body.expiresAt ?? null,
+        tokenVersion: Number(body.tokenVersion) || 0,
+      };
+    } catch (error) {
+      if (error.statusCode === 404) return { found: false };
+      throw error;
+    }
+  }
 }
 
 export function buildAdapters(config, fetchImpl = fetch) {

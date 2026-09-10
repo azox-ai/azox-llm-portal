@@ -16,6 +16,11 @@ export function fakeAdapter(key, overrides = {}) {
       calls.push(['remove', account.id]);
       if (overrides.remove) return overrides.remove(account);
     },
+    async status(account) {
+      calls.push(['status', account.id]);
+      if (overrides.status) return overrides.status(account);
+      return { found: true, enabled: true, expiresAt: null, tokenVersion: account.token_version };
+    },
   };
 }
 

@@ -6,7 +6,7 @@ import { hashPassword } from '../src/services/auth.js';
 import { reconcileAccount } from '../src/services/sync.js';
 import { refreshTokenSet } from '../src/services/refresh.js';
 import { parseCallbackInput } from '../src/oauth/client.js';
-import { authHeaders, jwt, login, testApp } from './helpers/test-app.js';
+import { authHeaders, fakeAdapter, jwt, login, testApp } from './helpers/test-app.js';
 
 async function seedUser(db, username, role = 'user') {
   const result = db.prepare('INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)')
@@ -129,6 +129,33 @@ test('reconcile stores the token version acknowledged by 9Router', async () => {
   assert.equal(row.sync_status, 'active');
   assert.equal(row.synced_token_version, 7);
   db.close();
+});
+
+test('Sync pulls an externally changed enabled state from 9Router into Portal', async (t) => {
+  const ninerouter = fakeAdapter('nine', {
+    status: async (account) => ({ found: true, enabled: true, tokenVersion: account.token_version }),
+  });
+  const { app, db, config } = await testApp({ adapters: { ninerouter } });
+  t.after(() => { app.close(); db.close(); });
+  const ownerId = await seedUser(db, 'alice');
+  const inserted = db.prepare(`INSERT INTO provider_accounts
+    (owner_id, provider, upstream_subject, display_name, credential_envelope, desired_enabled, token_version, access_expires_at)
+    VALUES (?, 'codex', 'sub', 'user@example.com', ?, 0, 4, '2030-01-01T00:00:00.000Z')`)
+    .run(ownerId, encryptJson({ accessToken: 'a', refreshToken: 'r', expiresAt: '2030-01-01T00:00:00.000Z' }, config.encryptionKey));
+  const accountId = Number(inserted.lastInsertRowid);
+  const auth = await login(app, 'alice');
+
+  const synced = await app.inject({
+    method: 'POST', url: `/api/accounts/${accountId}/retry`, headers: authHeaders(auth),
+  });
+  assert.equal(synced.statusCode, 200);
+  assert.equal(synced.json().routers.ninerouter, 'active');
+  assert.deepEqual(ninerouter.calls.at(-1), ['status', accountId]);
+  assert.equal(db.prepare('SELECT desired_enabled FROM provider_accounts WHERE id = ?').get(accountId).desired_enabled, 1);
+
+  const accounts = await app.inject({ method: 'GET', url: '/api/accounts', headers: { cookie: auth.cookie } });
+  assert.equal(accounts.json()[0].enabled, true);
+  assert.equal(accounts.json()[0].routers.ninerouter.status, 'active');
 });
 
 test('refresh preserves a rotated-or-omitted refresh token correctly', async () => {

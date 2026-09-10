@@ -66,6 +66,52 @@ export async function reconcileAccount(db, adapters, config, accountId) {
   return summary;
 }
 
+export async function pullRouterState(db, adapters, accountId) {
+  const account = db.prepare('SELECT * FROM provider_accounts WHERE id = ?').get(accountId);
+  if (!account) throw new Error('Account not found');
+  const summary = {};
+
+  for (const router of ROUTERS) {
+    try {
+      const remote = await adapters[router].status(account);
+      if (!remote.found) {
+        upsertConnection(db, accountId, router, {
+          status: 'failed',
+          tokenVersion: 0,
+          error: 'Connection not found on router',
+        });
+        summary[router] = 'failed';
+        continue;
+      }
+      const status = account.credential_status !== 'active'
+        ? 'needs_reauth'
+        : (remote.enabled ? 'active' : 'disabled');
+      upsertConnection(db, accountId, router, {
+        remoteId: `portal-${account.id}`,
+        tokenVersion: remote.tokenVersion,
+        status,
+        syncedAt: new Date().toISOString(),
+      });
+      summary[router] = status;
+    } catch (error) {
+      upsertConnection(db, accountId, router, {
+        status: 'failed',
+        tokenVersion: 0,
+        error: safeError(error),
+      });
+      summary[router] = 'failed';
+    }
+  }
+
+  const routerStates = Object.values(summary);
+  if (routerStates.length > 0 && routerStates.every((status) => status === 'active')) {
+    db.prepare('UPDATE provider_accounts SET desired_enabled = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(accountId);
+  } else if (routerStates.length > 0 && routerStates.every((status) => status === 'disabled')) {
+    db.prepare('UPDATE provider_accounts SET desired_enabled = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(accountId);
+  }
+  return summary;
+}
+
 export async function removeAccount(db, adapters, accountId) {
   const account = db.prepare('SELECT * FROM provider_accounts WHERE id = ?').get(accountId);
   if (!account) return { removed: true, failures: [] };

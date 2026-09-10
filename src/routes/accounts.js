@@ -6,7 +6,7 @@ import {
 import { ownAccount } from '../lib/validation.js';
 import { audit } from '../services/audit.js';
 import {
-  ROUTERS, aggregateStatus, markPending, reconcileAccount, removeAccount,
+  ROUTERS, aggregateStatus, markPending, pullRouterState, reconcileAccount, removeAccount,
 } from '../services/sync.js';
 import { fetchQuota } from '../services/quota.js';
 import { refreshAccount } from '../services/refresh.js';
@@ -181,8 +181,7 @@ export default async function accountRoutes(app, { db, config, adapters, oauthFe
     if (!request.user) return reply.code(401).send({ error: 'Not authenticated' });
     const account = ownAccount(db, request.params.id, request.user);
     if (!account) return reply.code(404).send({ error: 'Account not found' });
-    markPending(db, account.id);
-    return reply.send({ ok: true, routers: await reconcileAccount(db, adapters, config, account.id) });
+    return reply.send({ ok: true, routers: await pullRouterState(db, adapters, account.id) });
   });
 
   // Quota Tracker is deliberately read-only. It has only GET routes; account

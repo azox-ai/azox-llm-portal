@@ -6,12 +6,17 @@ import { styles } from '../src/web/styles.js';
 import { renderApp } from '../src/web/page.js';
 import { testApp } from './helpers/test-app.js';
 
-test('client bundle parses and exposes the three product surfaces', () => {
+test('client bundle parses and merges quota into the providers surface', () => {
   assert.doesNotThrow(() => new vm.Script(appScript));
   for (const label of ['Providers', 'Quota Tracker', 'Admin']) assert.match(appScript, new RegExp(label));
+  // Quota Tracker is no longer a separate tab: it renders under each account row.
+  assert.match(appScript, /quota-row/);
+  assert.match(appScript, /quotaStrip/);
+  assert.doesNotMatch(appScript, /\['quota', /);
+  assert.doesNotMatch(appScript, /function quotaView/);
   assert.doesNotMatch(appScript, /Tạo tài khoản mới|OmniRoute/);
   assert.match(appScript, /Sponsored by: /);
-  assert.match(appScript, /Read-only/);
+  assert.match(appScript, /read-only/);
   assert.match(appScript, /Step 1: Open OAuth URL|Open OAuth URL in browser/);
   assert.match(appScript, /Paste full Codex callback URL/);
   assert.match(appScript, /Admin login/);
