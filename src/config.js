@@ -16,6 +16,15 @@ function requiredInProduction(name, fallback) {
 
 export function loadConfig(overrides = {}) {
   const production = process.env.NODE_ENV === 'production';
+  // Whether browsers reach the portal over TLS. This is NOT the same question
+  // as NODE_ENV: the zbs3 deployment runs NODE_ENV=production but is served as
+  // plain HTTP on a Tailscale address. Conflating the two broke the UI outright
+  // — `secure` cookies were dropped by the browser so no session could be
+  // stored, and helmet's `upgrade-insecure-requests` rewrote /app.js and
+  // /styles.css to https:// where nothing listens, leaving a blank page.
+  // Defaults to on in production so a TLS deployment stays hardened by
+  // omission; a plain-HTTP deployment must opt out loudly.
+  const tls = production && process.env.INSECURE_HTTP !== 'true';
   return {
     host: process.env.HOST || '127.0.0.1',
     port: integer('PORT', 3020),
@@ -23,7 +32,8 @@ export function loadConfig(overrides = {}) {
     dbPath: process.env.DATABASE_PATH || './data/llm-portal.sqlite',
     cookieSecret: requiredInProduction('COOKIE_SECRET', randomBytes(32).toString('hex')),
     encryptionKey: requiredInProduction('CREDENTIAL_ENCRYPTION_KEY', randomBytes(32).toString('base64')),
-    secureCookies: production,
+    tls,
+    secureCookies: tls,
     sessionHours: integer('SESSION_HOURS', 24),
     oauthStateMinutes: integer('OAUTH_STATE_MINUTES', 10),
     initialAdminUsername: process.env.INIT_ADMIN_USERNAME || 'admin',

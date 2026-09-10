@@ -22,14 +22,30 @@ export async function buildApp(options = {}) {
   const app = Fastify({ logger: options.logger ?? false, trustProxy: config.trustProxy });
   const adapters = options.adapters || buildAdapters(config, options.routerFetch);
 
+  // useDefaults:false is load-bearing. Helmet otherwise MERGES its defaults
+  // into the directives below, which silently reintroduces
+  // `upgrade-insecure-requests` — fatal on a plain-HTTP deployment, because the
+  // browser rewrites /app.js and /styles.css to https:// where nothing listens
+  // and renders an unstyled, non-functional page. Every directive we rely on is
+  // therefore listed explicitly here.
   await app.register(helmet, {
     global: true,
+    hsts: config.tls,
     contentSecurityPolicy: {
+      useDefaults: false,
       directives: {
         defaultSrc: ["'self'"],
+        baseUri: ["'self'"],
+        formAction: ["'self'"],
+        frameAncestors: ["'none'"],
+        objectSrc: ["'none'"],
         scriptSrc: ["'self'"],
+        scriptSrcAttr: ["'none'"],
         styleSrc: ["'self'", "'unsafe-inline'"],
         imgSrc: ["'self'", 'data:'],
+        fontSrc: ["'self'", 'data:'],
+        connectSrc: ["'self'"],
+        ...(config.tls ? { upgradeInsecureRequests: [] } : {}),
       },
     },
   });

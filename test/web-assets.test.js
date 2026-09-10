@@ -4,6 +4,7 @@ import vm from 'node:vm';
 import { appScript } from '../src/web/client.js';
 import { styles } from '../src/web/styles.js';
 import { renderApp } from '../src/web/page.js';
+import { testApp } from './helpers/test-app.js';
 
 /**
  * The browser bundle is stored inside a template literal, so a stray backtick
@@ -32,6 +33,38 @@ test('served assets are non-empty and self-consistent', () => {
     assert.match(styles, new RegExp('\\.badge\\.' + status + '\\b'), `no styling for status: ${status}`);
   }
   assert.match(renderApp(), /<!doctype html>/i);
+});
+
+// Browser-level regression for the blank page seen on zbs3. Helmet adds
+// `upgrade-insecure-requests` by default; over a plain HTTP Tailscale address,
+// browsers then rewrite /app.js and /styles.css to https:// where no listener
+// exists. curl still reports both assets as 200, so source-only tests miss it.
+test('plain HTTP mode does not tell browsers to upgrade assets to HTTPS', async (t) => {
+  const { app, db } = await testApp({ config: { tls: false, secureCookies: false } });
+  t.after(() => { app.close(); db.close(); });
+  const response = await app.inject({ method: 'GET', url: '/' });
+
+  assert.equal(response.statusCode, 200);
+  assert.match(response.headers['content-security-policy'], /script-src 'self'/);
+  assert.doesNotMatch(response.headers['content-security-policy'], /upgrade-insecure-requests/);
+  assert.equal(response.headers['strict-transport-security'], undefined);
+});
+
+test('TLS mode keeps HSTS, secure cookies and HTTPS asset upgrades', async (t) => {
+  const { app, db } = await testApp({ config: { tls: true, secureCookies: true } });
+  t.after(() => { app.close(); db.close(); });
+
+  const page = await app.inject({ method: 'GET', url: '/' });
+  assert.match(page.headers['content-security-policy'], /upgrade-insecure-requests/);
+  assert.match(page.headers['strict-transport-security'], /max-age=/);
+
+  const registration = await app.inject({
+    method: 'POST',
+    url: '/api/register',
+    payload: { username: 'alice', password: 'correct horse battery' },
+  });
+  const sessionCookie = registration.cookies.find((cookie) => cookie.name === 'sp_session');
+  assert.equal(sessionCookie?.secure, true);
 });
 
 test('the portal never advertises quota or usage', () => {

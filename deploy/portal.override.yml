@@ -23,6 +23,11 @@ services:
       PORT: 8080
       DATABASE_PATH: /data/portal.db
       NODE_ENV: production
+      # Served as plain HTTP on the Tailscale address — there is no TLS
+      # listener in front. Without this the browser drops the `secure` session
+      # cookie and CSP upgrade-insecure-requests rewrites /app.js to https://,
+      # producing a blank unstyled page. Remove once TLS terminates in front.
+      INSECURE_HTTP: "true"
     ports:
       # Tailscale-only listener, matching the rest of the gateway.
       - "100.88.64.101:20140:8080"
