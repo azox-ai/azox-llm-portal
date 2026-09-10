@@ -1,0 +1,79 @@
+import Fastify from 'fastify';
+import cookie from '@fastify/cookie';
+import helmet from '@fastify/helmet';
+import rateLimit from '@fastify/rate-limit';
+import formbody from '@fastify/formbody';
+import { openDatabase } from './db/index.js';
+import { loadConfig } from './config.js';
+import { getSession } from './services/auth.js';
+import { buildAdapters } from './adapters/router-adapter.js';
+import authRoutes from './routes/auth.js';
+import accountRoutes from './routes/accounts.js';
+import adminRoutes from './routes/admin.js';
+import { renderApp } from './web/page.js';
+import { appScript } from './web/client.js';
+import { styles } from './web/styles.js';
+
+const MUTATING = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+
+export async function buildApp(options = {}) {
+  const config = options.config || loadConfig();
+  const db = options.db || openDatabase(config.dbPath);
+  const app = Fastify({ logger: options.logger ?? false, trustProxy: config.trustProxy });
+  const adapters = options.adapters || buildAdapters(config, options.routerFetch);
+
+  await app.register(helmet, {
+    global: true,
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'"],
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        imgSrc: ["'self'", 'data:'],
+      },
+    },
+  });
+  await app.register(cookie, { secret: config.cookieSecret, hook: 'onRequest' });
+  await app.register(rateLimit, { global: false });
+  await app.register(formbody);
+
+  app.decorateRequest('user', null);
+  app.addHook('onRequest', async (request, reply) => {
+    const signed = request.cookies.sp_session
+      ? request.unsignCookie(request.cookies.sp_session)
+      : null;
+    request.user = signed?.valid ? getSession(db, signed.value) : null;
+
+    // OAuth callback is protected by a one-time PKCE state; all other mutations
+    // from an authenticated browser require the session-bound CSRF token.
+    if (MUTATING.has(request.method) && request.user && !request.url.startsWith('/api/oauth/')) {
+      const csrf = request.headers['x-csrf-token'];
+      if (!csrf || csrf !== request.user.csrf_token) {
+        return reply.code(403).send({ error: 'Invalid CSRF token' });
+      }
+    }
+  });
+
+  app.get('/health/live', async () => ({ status: 'ok' }));
+  app.get('/health/ready', async (_request, reply) => {
+    try {
+      db.prepare('SELECT 1').get();
+      return { status: 'ready' };
+    } catch {
+      return reply.code(503).send({ status: 'not_ready' });
+    }
+  });
+
+  await app.register(authRoutes, { db, config });
+  await app.register(accountRoutes, { db, config, adapters, oauthFetch: options.oauthFetch });
+  await app.register(adminRoutes, { db });
+
+  app.get('/', async (_request, reply) => reply.type('text/html').send(renderApp()));
+  app.get('/app.js', async (_request, reply) => reply.type('application/javascript').send(appScript));
+  app.get('/styles.css', async (_request, reply) => reply.type('text/css').send(styles));
+
+  app.addHook('onClose', async () => {
+    if (!options.db) db.close();
+  });
+  return { app, db, config, adapters };
+}
