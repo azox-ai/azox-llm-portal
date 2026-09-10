@@ -44,9 +44,13 @@ export async function buildApp(options = {}) {
       : null;
     request.user = signed?.valid ? getSession(db, signed.value) : null;
 
-    // OAuth callback is protected by a one-time PKCE state; all other mutations
-    // from an authenticated browser require the session-bound CSRF token.
-    if (MUTATING.has(request.method) && request.user && !request.url.startsWith('/api/oauth/')) {
+    // Every mutation from an authenticated browser requires the session-bound
+    // CSRF token. The OAuth callback needs no exemption: it is a GET, so it is
+    // never in MUTATING, and it is protected by its own one-time PKCE state.
+    // An `/api/oauth/` prefix exemption would therefore protect nothing and
+    // would instead strip CSRF from POST /api/oauth/:provider/start, letting a
+    // cross-site page start OAuth flows against a logged-in user's session.
+    if (MUTATING.has(request.method) && request.user) {
       const csrf = request.headers['x-csrf-token'];
       if (!csrf || csrf !== request.user.csrf_token) {
         return reply.code(403).send({ error: 'Invalid CSRF token' });
