@@ -1,4 +1,4 @@
-import { validPassword } from '../lib/validation.js';
+import { validPassword, validUsername } from '../lib/validation.js';
 import { createHash, timingSafeEqual } from 'node:crypto';
 import {
   hashPassword, verifyPassword, createSession, destroySession, destroyUserSessions,
@@ -46,6 +46,25 @@ export default async function authRoutes(app, { db, config }) {
   app.post('/api/login', { config: { rateLimit: { max: 10, timeWindow: '5 minutes' } } }, async (request, reply) => {
     const { username, password } = request.body ?? {};
     return authenticate(request, reply, username, password);
+  });
+
+  app.post('/api/register', { config: { rateLimit: { max: 10, timeWindow: '5 minutes' } } }, async (request, reply) => {
+    const { username, password } = request.body ?? {};
+    if (!validUsername(username)) {
+      return reply.code(400).send({ error: 'Username must be 3-64 chars: letters, digits, . _ -' });
+    }
+    if (!validPassword(password)) {
+      return reply.code(400).send({ error: 'Password must be at least 12 characters' });
+    }
+    if (db.prepare('SELECT id FROM users WHERE username = ?').get(username)) {
+      return reply.code(409).send({ error: 'Username already exists' });
+    }
+    const created = db.prepare("INSERT INTO users (username, password_hash, role) VALUES (?, ?, 'user')")
+      .run(username, await hashPassword(password));
+    const userId = Number(created.lastInsertRowid);
+    audit(db, { actorId: userId, action: 'user.registered', targetType: 'user', targetId: userId, ip: request.ip });
+    const session = issue(reply, userId);
+    return reply.code(201).send({ id: userId, username, role: 'user', csrfToken: session.csrf });
   });
 
   app.post('/api/login/admin', { config: { rateLimit: { max: 10, timeWindow: '5 minutes' } } }, async (request, reply) => {

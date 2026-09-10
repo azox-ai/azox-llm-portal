@@ -127,6 +127,8 @@ tr:hover td{background:var(--bg-alt)}
 /* ------------------------------------------------------------- sponsors */
 .sponsor-group .panel-head{align-items:center}
 .sponsor-count{font-size:11px;color:var(--muted);border:1px solid var(--border);border-radius:999px;padding:3px 10px}
+.sponsor-group table{table-layout:fixed;width:100%}
+.sponsor-account-col{width:48%}.sponsor-provider-col{width:22%}.sponsor-state-col{width:15%}.sponsor-router-col{width:15%}
 
 /* ---------------------------------------------------------------- modal */
 .modal-overlay{position:fixed;inset:0;z-index:50;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(0,0,0,.5);backdrop-filter:blur(2px)}
@@ -162,6 +164,8 @@ tr:hover td{background:var(--bg-alt)}
 .auth-card h2{font-size:23px;margin:4px 0}
 .auth-card p{color:var(--muted);margin:0 0 22px;font-size:13px}
 .login-tabs{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-bottom:16px}
+.login-actions{display:grid;grid-template-columns:2fr 1fr;gap:8px}
+.login-actions button{width:100%;padding:11px}
 .form-hint{margin:12px 0 0!important;font-size:11px!important;text-align:center}
 .row-sub{display:block;color:var(--muted);font-size:10px;margin-top:2px}
 .create-user{display:grid;grid-template-columns:1fr 1.4fr 120px auto;gap:10px;padding:16px 20px;align-items:end}

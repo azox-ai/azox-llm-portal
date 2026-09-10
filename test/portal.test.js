@@ -20,13 +20,35 @@ async function session(app, db, username, role = 'user') {
   return login(app, username);
 }
 
-test('self-registration is absent and an admin creates users without forced password change', async (t) => {
+test('the login card creates a free username and rejects one already taken', async (t) => {
+  const { app, db } = await testApp();
+  t.after(() => { app.close(); db.close(); });
+
+  const created = await app.inject({
+    method: 'POST', url: '/api/register',
+    payload: { username: 'newcomer', password: 'correct horse battery' },
+  });
+  assert.equal(created.statusCode, 201);
+  assert.equal(created.json().role, 'user');
+  assert.equal((await login(app, 'newcomer')).response.statusCode, 200);
+
+  const duplicate = await app.inject({
+    method: 'POST', url: '/api/register',
+    payload: { username: 'newcomer', password: 'another correct horse' },
+  });
+  assert.equal(duplicate.statusCode, 409);
+  assert.match(duplicate.json().error, /already exists/);
+
+  const weak = await app.inject({
+    method: 'POST', url: '/api/register', payload: { username: 'shorty', password: 'short' },
+  });
+  assert.equal(weak.statusCode, 400);
+});
+
+test('an admin creates users without forcing a password change', async (t) => {
   const { app, db } = await testApp();
   t.after(() => { app.close(); db.close(); });
   const admin = await session(app, db, 'admin', 'admin');
-
-  const registration = await app.inject({ method: 'POST', url: '/api/register', payload: {} });
-  assert.equal(registration.statusCode, 404);
 
   const created = await app.inject({
     method: 'POST', url: '/api/admin/users', headers: authHeaders(admin),

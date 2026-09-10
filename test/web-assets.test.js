@@ -26,7 +26,15 @@ test('client bundle parses and merges quota into the providers surface', () => {
   assert.match(appScript, /Sponsored by: /);
   assert.match(appScript, /Step 1: Open OAuth URL|Open OAuth URL in browser/);
   assert.match(appScript, /Paste full Codex callback URL/);
-  assert.match(appScript, /Admin login/);
+  // The login card shows short User/Admin tabs plus the New sign-up button.
+  assert.match(appScript, />User</);
+  assert.match(appScript, />Admin</);
+  assert.match(appScript, /login-new/);
+  assert.match(appScript, /registerUser/);
+  assert.doesNotMatch(appScript, /Admin login|User login/);
+  assert.doesNotMatch(appScript, /User đăng nhập bằng username\/password/);
+  assert.doesNotMatch(appScript, /INIT_ADMIN_PASSWORD đã cấu hình/);
+  assert.match(appScript, /sponsor-account-col/);
   assert.match(appScript, /Reset password/);
   assert.match(appScript, /Remove user/);
   assert.match(appScript, /btn-password-cancel/);
@@ -44,6 +52,9 @@ test('served assets contain the 9Router-inspired portal shell', () => {
   assert.match(styles, /\.modal-overlay/);
   // Session and weekly share the row evenly, with the requested top margin.
   assert.match(styles, /\.quota-inline\{display:grid;grid-template-columns:1fr 1fr[^}]*margin-top:18px\}/);
+  // Sponsor tables share one fixed column grid so groups line up.
+  assert.match(styles, /\.sponsor-group table\{table-layout:fixed/);
+  assert.match(styles, /\.login-actions\{display:grid/);
   for (const status of ['active', 'disabled', 'failed', 'needs_reauth', 'pending']) {
     assert.match(styles, new RegExp('\\.badge\\.' + status + '\\b'));
   }

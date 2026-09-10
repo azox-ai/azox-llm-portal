@@ -72,15 +72,14 @@ async function loadAdmin() {
 function loginView() {
   return '<section class="auth-shell"><div class="auth-card"><div class="brand-mark">9</div>' +
     '<span class="eyebrow">LLM GATEWAY</span><h2>Welcome back</h2>' +
-    '<p>User đăng nhập bằng username/password. Admin có thể dùng password init giống 9Router.</p>' +
-    '<div class="login-tabs"><button class="primary" id="login-user-tab">User login</button>' +
-    '<button id="login-admin-tab">Admin login</button></div>' +
+    '<div class="login-tabs"><button class="primary" id="login-user-tab">User</button>' +
+    '<button id="login-admin-tab">Admin</button></div>' +
     '<form id="login-user-form"><label>Username<input id="lu" autocomplete="username" autofocus></label>' +
     '<label>Password<input id="lp" type="password" autocomplete="current-password"></label>' +
-    '<button class="primary wide" type="submit">Sign in</button></form>' +
+    '<div class="login-actions"><button class="primary" type="submit">Sign in</button>' +
+    '<button id="login-new" type="button">New</button></div></form>' +
     '<form id="login-admin-form" hidden><label>Admin password<input id="lap" type="password" autocomplete="current-password"></label>' +
-    '<button class="primary wide" type="submit">Sign in as admin</button>' +
-    '<p class="form-hint">Dùng <span class="mono">INIT_ADMIN_PASSWORD</span> đã cấu hình khi khởi tạo Portal.</p></form>' +
+    '<button class="primary wide" type="submit">Sign in as admin</button></form>' +
     '</div></section>';
 }
 
@@ -154,7 +153,9 @@ function sponsorsView() {
       '<td>' + statusBadge(account.status) + '</td><td>' + statusBadge(account.routers.ninerouter?.status || 'pending') + '</td></tr>').join('');
     return '<div class="panel sponsor-group"><div class="panel-head"><div><h2>' + esc(sponsor.username) +
       '</h2></div><span class="sponsor-count">' + sponsor.accounts.length + ' accounts</span></div>' +
-      '<div class="table-wrap"><table><thead><tr><th>Account</th><th>Provider</th><th>State</th><th>9Router</th></tr></thead>' +
+      '<div class="table-wrap"><table><colgroup><col class="sponsor-account-col"><col class="sponsor-provider-col">' +
+      '<col class="sponsor-state-col"><col class="sponsor-router-col"></colgroup>' +
+      '<thead><tr><th>Account</th><th>Provider</th><th>State</th><th>9Router</th></tr></thead>' +
       '<tbody>' + rows + '</tbody></table></div></div>';
   }).join('');
   return groups || '<div class="panel empty">No sponsors available.</div>';
@@ -288,6 +289,7 @@ function closeModal() {
 
 function bind() {
   if ($('login-user-form')) $('login-user-form').onsubmit = (event) => { event.preventDefault(); submitLogin(false); };
+  if ($('login-new')) $('login-new').onclick = registerUser;
   if ($('login-admin-form')) $('login-admin-form').onsubmit = (event) => { event.preventDefault(); submitLogin(true); };
   if ($('login-user-tab')) $('login-user-tab').onclick = () => switchLogin(false);
   if ($('login-admin-tab')) $('login-admin-tab').onclick = () => switchLogin(true);
@@ -411,6 +413,16 @@ async function submitLogin(admin) {
     state.tab = state.me.role === 'admin' ? 'admin' : 'providers';
     await refresh();
   } catch (error) { notify(error.message); }
+}
+
+async function registerUser() {
+  const button = $('login-new');
+  await act(button, async () => {
+    state.me = await api('/api/register', { method: 'POST', body: JSON.stringify({ username: $('lu').value, password: $('lp').value }) });
+    state.tab = 'providers';
+    state.message = { text: 'User created successfully.', kind: 'ok' };
+    await refresh();
+  });
 }
 
 async function changePassword() {
