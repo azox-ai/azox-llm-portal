@@ -1,4 +1,4 @@
-# Sponsor Portal
+# LLM Portal
 
 Một identity plane duy nhất cho các tài khoản Claude/Codex được sponsor vào
 LLM gateway. Sponsor đăng nhập **một lần** ở đây; portal chạy OAuth, giữ

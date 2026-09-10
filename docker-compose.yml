@@ -1,11 +1,11 @@
-# Sponsor Portal — joins the existing llm-gateway network so it can reach
-# 9router and OmniRoute by container name. It does not define those services;
-# they are owned by the llm-gateway stack.
+# LLM Portal — joins the existing llm-gateway network so it can reach 9router
+# and OmniRoute by container name. It does not define those services; they are
+# owned by the llm-gateway stack.
 services:
-  sponsor-portal:
+  portal:
     build: .
-    image: sponsor-portal:dev
-    container_name: sponsor-portal
+    image: llm-portal:${PORTAL_TAG:-dev}
+    container_name: llm-gateway-portal
     restart: unless-stopped
     env_file:
       - .env
@@ -14,18 +14,18 @@ services:
       PORT: 8080
       DATABASE_PATH: /data/portal.db
     volumes:
-      - sponsor-portal-data:/data
+      - llm-portal-data:/data
     ports:
       # Tailscale-only listener, matching the rest of the gateway.
-      - "127.0.0.1:20140:8080"
-      # Codex pins its OAuth callback to port 1455 on the host. Both host
-      # ports reach the same Fastify listener inside the container.
-      - "127.0.0.1:1455:8080"
+      - "100.88.64.101:20140:8080"
+      # Codex pins its OAuth callback to port 1455; both host ports reach the
+      # same Fastify listener inside the container.
+      - "100.88.64.101:1455:8080"
     networks:
       - llm-gateway
 
 volumes:
-  sponsor-portal-data:
+  llm-portal-data:
 
 networks:
   llm-gateway:

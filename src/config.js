@@ -20,7 +20,7 @@ export function loadConfig(overrides = {}) {
     host: process.env.HOST || '127.0.0.1',
     port: integer('PORT', 3020),
     trustProxy: process.env.TRUST_PROXY === 'true',
-    dbPath: process.env.DATABASE_PATH || './data/sponsor-portal.sqlite',
+    dbPath: process.env.DATABASE_PATH || './data/llm-portal.sqlite',
     cookieSecret: requiredInProduction('COOKIE_SECRET', randomBytes(32).toString('hex')),
     encryptionKey: requiredInProduction('CREDENTIAL_ENCRYPTION_KEY', randomBytes(32).toString('base64')),
     secureCookies: production,
