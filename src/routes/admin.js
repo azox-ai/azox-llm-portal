@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
-import { hashPassword } from '../services/auth.js';
-import { destroyUserSessions } from '../services/auth.js';
+import { hashPassword, destroyUserSessions } from '../services/auth.js';
+import { validUsername, validPassword } from '../lib/validation.js';
 import { audit } from '../services/audit.js';
 
 function requireAdmin(request, reply) {
@@ -13,18 +13,45 @@ export default async function adminRoutes(app, { db }) {
   app.get('/api/admin/users', async (request, reply) => {
     if (!requireAdmin(request, reply)) return reply;
     return db.prepare(`
-      SELECT u.id, u.username, u.role, u.disabled, u.must_change_password, u.created_at,
-             (SELECT COUNT(*) FROM sponsored_accounts a WHERE a.owner_id = u.id) AS account_count
+      SELECT u.id, u.username, u.role, u.disabled, u.created_at,
+             (SELECT COUNT(*) FROM provider_accounts a WHERE a.owner_id = u.id) AS account_count
       FROM users u ORDER BY u.created_at
     `).all().map((row) => ({
       id: row.id,
       username: row.username,
       role: row.role,
       disabled: Boolean(row.disabled),
-      mustChangePassword: Boolean(row.must_change_password),
       accountCount: row.account_count,
       createdAt: row.created_at,
     }));
+  });
+
+  // Accounts exist only because an admin creates them: there is no
+  // self-registration, so the admin sets the first password and hands it over
+  // out of band. The user may change it later but is never forced to.
+  app.post('/api/admin/users', async (request, reply) => {
+    if (!requireAdmin(request, reply)) return reply;
+    const { username, password, role = 'user' } = request.body ?? {};
+    if (!validUsername(username)) {
+      return reply.code(400).send({ error: 'Username must be 3-64 chars: letters, digits, . _ -' });
+    }
+    if (!validPassword(password)) {
+      return reply.code(400).send({ error: 'Password must be at least 12 characters' });
+    }
+    if (!['user', 'admin'].includes(role)) {
+      return reply.code(400).send({ error: 'role must be user or admin' });
+    }
+    if (db.prepare('SELECT id FROM users WHERE username = ?').get(username)) {
+      return reply.code(409).send({ error: 'Username already taken' });
+    }
+    const result = db.prepare('INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)')
+      .run(username, await hashPassword(password), role);
+    const userId = Number(result.lastInsertRowid);
+    audit(db, {
+      actorId: request.user.id, action: 'admin.create_user', targetType: 'user', targetId: userId,
+      detail: role, ip: request.ip,
+    });
+    return reply.code(201).send({ id: userId, username, role });
   });
 
   /** Issues a temporary password; the admin never sees the user's real password. */
@@ -34,7 +61,7 @@ export default async function adminRoutes(app, { db }) {
     if (!user) return reply.code(404).send({ error: 'User not found' });
     const temporary = randomBytes(12).toString('base64url');
     db.prepare(`
-      UPDATE users SET password_hash = ?, must_change_password = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?
+      UPDATE users SET password_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
     `).run(await hashPassword(temporary), user.id);
     destroyUserSessions(db, user.id);
     audit(db, {

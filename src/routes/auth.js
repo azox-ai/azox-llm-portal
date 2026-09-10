@@ -1,4 +1,4 @@
-import { validUsername, validPassword } from '../lib/validation.js';
+import { validPassword } from '../lib/validation.js';
 import {
   hashPassword, verifyPassword, createSession, destroySession, destroyUserSessions,
 } from '../services/auth.js';
@@ -19,27 +19,6 @@ export default async function authRoutes(app, { db, config }) {
     return session;
   }
 
-  // Open self-registration: internal-only service, first user is not privileged.
-  app.post('/api/register', { config: { rateLimit: { max: 10, timeWindow: '10 minutes' } } }, async (request, reply) => {
-    const { username, password } = request.body ?? {};
-    if (!validUsername(username)) {
-      return reply.code(400).send({ error: 'Username must be 3-64 chars: letters, digits, . _ -' });
-    }
-    if (!validPassword(password)) {
-      return reply.code(400).send({ error: 'Password must be at least 12 characters' });
-    }
-    const exists = db.prepare('SELECT id FROM users WHERE username = ?').get(username);
-    if (exists) return reply.code(409).send({ error: 'Username already taken' });
-
-    const hash = await hashPassword(password);
-    const result = db.prepare("INSERT INTO users (username, password_hash, role) VALUES (?, ?, 'user')")
-      .run(username, hash);
-    const userId = Number(result.lastInsertRowid);
-    audit(db, { actorId: userId, action: 'user.register', targetType: 'user', targetId: userId, ip: request.ip });
-    const session = issue(reply, userId);
-    return reply.code(201).send({ username, role: 'user', csrfToken: session.csrf });
-  });
-
   app.post('/api/login', { config: { rateLimit: { max: 10, timeWindow: '5 minutes' } } }, async (request, reply) => {
     const { username, password } = request.body ?? {};
     const user = typeof username === 'string'
@@ -59,7 +38,6 @@ export default async function authRoutes(app, { db, config }) {
     return reply.send({
       username: user.username,
       role: user.role,
-      mustChangePassword: Boolean(user.must_change_password),
       csrfToken: session.csrf,
     });
   });
@@ -76,7 +54,6 @@ export default async function authRoutes(app, { db, config }) {
     return reply.send({
       username: request.user.username,
       role: request.user.role,
-      mustChangePassword: Boolean(request.user.must_change_password),
       csrfToken: request.user.csrf_token,
     });
   });
@@ -93,7 +70,7 @@ export default async function authRoutes(app, { db, config }) {
     }
     const hash = await hashPassword(newPassword);
     db.prepare(`
-      UPDATE users SET password_hash = ?, must_change_password = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?
+      UPDATE users SET password_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
     `).run(hash, user.id);
     destroyUserSessions(db, user.id);
     issue(reply, user.id);

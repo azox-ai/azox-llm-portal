@@ -9,9 +9,9 @@ export function validPassword(value) {
 export function ownAccount(db, accountId, user) {
   return db.prepare(`
     SELECT a.*, u.username AS owner_username
-    FROM sponsored_accounts a JOIN users u ON u.id = a.owner_id
-    WHERE a.id = ? AND (a.owner_id = ? OR ? = 'admin')
-  `).get(accountId, user.id, user.role);
+    FROM provider_accounts a JOIN users u ON u.id = a.owner_id
+    WHERE a.id = ? AND a.owner_id = ?
+  `).get(accountId, user.id);
 }
 
 export function safeError(error) {

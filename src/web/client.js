@@ -1,8 +1,8 @@
 export const appScript = String.raw`
-const state = { me: null, accounts: [], routers: {}, tab: 'accounts', message: null };
+const state = { me: null, accounts: [], routers: {}, tab: 'providers', message: null, quotas: {} };
 const $ = (id) => document.getElementById(id);
-const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) =>
-  ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (char) =>
+  ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
 
 async function api(path, options = {}) {
   const headers = { 'content-type': 'application/json', ...(options.headers || {}) };
@@ -17,219 +17,189 @@ async function api(path, options = {}) {
 function notify(text, kind = 'error') {
   state.message = { text, kind };
   render();
-  if (kind === 'ok') setTimeout(() => { state.message = null; render(); }, 4000);
+  if (kind === 'ok') setTimeout(() => { state.message = null; render(); }, 3500);
 }
 
 async function refresh() {
-  const [accounts, routers] = await Promise.all([api('/api/accounts'), api('/api/router-status')]);
-  state.accounts = accounts;
-  state.routers = routers;
+  [state.accounts, state.routers] = await Promise.all([api('/api/accounts'), api('/api/router-status')]);
   render();
 }
 
 function loginView() {
-  return '<div class="card"><h2>Đăng nhập</h2>' +
-    '<label><span>Username</span><input id="lu" autocomplete="username"></label>' +
-    '<label><span>Password</span><input id="lp" type="password" autocomplete="current-password"></label>' +
-    '<div class="row"><button class="primary" id="btn-login">Đăng nhập</button>' +
-    '<button id="btn-register">Tạo tài khoản mới</button></div>' +
-    '<p class="dim">Internal service. Tài khoản mới có quyền contributor.</p></div>';
+  return '<section class="auth-shell"><div class="auth-card"><div class="eyebrow">AZOX AI</div>' +
+    '<h2>LLM Portal</h2><p>Đăng nhập bằng tài khoản do admin cấp.</p>' +
+    '<label>Username<input id="lu" autocomplete="username" autofocus></label>' +
+    '<label>Password<input id="lp" type="password" autocomplete="current-password"></label>' +
+    '<button class="primary wide" id="btn-login">Đăng nhập</button></div></section>';
 }
 
 function passwordView() {
-  return '<div class="card"><h2>Bắt buộc đổi mật khẩu</h2>' +
-    '<label><span>Mật khẩu hiện tại</span><input id="cp" type="password"></label>' +
-    '<label><span>Mật khẩu mới (tối thiểu 12 ký tự)</span><input id="np" type="password"></label>' +
+  return '<div class="panel compact"><div class="panel-head"><div><h2>Đổi password</h2>' +
+    '<p>Tài khoản không bắt buộc đổi password lần đầu.</p></div></div>' +
+    '<label>Password hiện tại<input id="cp" type="password"></label>' +
+    '<label>Password mới (tối thiểu 12 ký tự)<input id="np" type="password"></label>' +
     '<button class="primary" id="btn-password">Cập nhật</button></div>';
 }
 
-function routerCell(account, key) {
-  const info = account.routers[key];
-  if (!info) return '<span class="badge pending">pending</span>';
-  // "unsupported" is a capability gap, not a fault the sponsor can retry away,
-  // so it gets its own tooltip instead of the raw error string.
-  const hint = info.status === 'unsupported'
-    ? 'Router này chưa có đường nạp credential cho provider ' + account.provider + '. Retry không khắc phục được.'
-    : info.error;
-  const title = hint ? ' title="' + esc(hint) + '"' : '';
-  return '<span class="badge ' + esc(info.status) + '"' + title + '>' + esc(info.status) + '</span>';
+function statusBadge(value) {
+  return '<span class="badge ' + esc(value) + '"><i></i>' + esc(value) + '</span>';
 }
 
-function accountsView() {
-  const unconfigured = Object.entries(state.routers)
-    .filter(([, v]) => !v.configured).map(([k]) => k);
-  const warning = unconfigured.length
-    ? '<div class="msg error">Router chưa cấu hình: ' + esc(unconfigured.join(', ')) +
-      '. Account sẽ ở trạng thái failed cho tới khi có endpoint và privileged token.</div>'
-    : '';
+function providerIcon(provider) {
+  return '<span class="provider-icon ' + provider + '">' + (provider === 'claude' ? 'A' : '⌘') + '</span>';
+}
 
-  const rows = state.accounts.map((a) => {
-    const isAdminView = state.me.role === 'admin';
-    return '<tr>' +
-      '<td>' + esc(a.displayName) + (isAdminView ? ' <span class="dim">(' + esc(a.owner) + ')</span>' : '') + '</td>' +
-      '<td>' + esc(a.provider) + '</td>' +
-      '<td><span class="badge ' + esc(a.status) + '">' + esc(a.status) + '</span></td>' +
-      '<td>' + routerCell(a, 'ninerouter') + '</td>' +
-      '<td>' + routerCell(a, 'omniroute') + '</td>' +
-      '<td class="row">' +
-        '<button data-toggle="' + a.id + '" data-enabled="' + (a.enabled ? '0' : '1') + '">' +
-          (a.enabled ? 'Off' : 'On') + '</button>' +
-        '<button data-retry="' + a.id + '">Retry</button>' +
-        '<button data-reauth="' + esc(a.provider) + '">Re-auth</button>' +
-        '<button class="danger" data-remove="' + a.id + '">Remove</button>' +
-      '</td></tr>';
-  }).join('');
+function providersView() {
+  const rows = state.accounts.map((account) => '<tr><td><div class="account-name">' +
+    providerIcon(account.provider) + '<div><strong>' + esc(account.displayName) + '</strong><small>' +
+    esc(account.owner) + '</small></div></div></td><td>' + esc(account.provider === 'claude' ? 'Claude' : 'Codex') +
+    '</td><td>' + statusBadge(account.status) + '</td><td>' +
+    statusBadge(account.routers.ninerouter?.status || 'pending') + '</td><td>' +
+    (account.accessExpiresAt ? new Date(account.accessExpiresAt).toLocaleString() : '—') + '</td><td class="actions">' +
+    '<button data-toggle="' + account.id + '" data-enabled="' + (account.enabled ? '0' : '1') + '">' +
+    (account.enabled ? 'Disable' : 'Enable') + '</button><button data-retry="' + account.id + '">Sync</button>' +
+    '<button data-reauth="' + esc(account.provider) + '">Re-auth</button>' +
+    '<button class="danger" data-remove="' + account.id + '">Delete</button></td></tr>').join('');
+  const configured = state.routers.ninerouter?.configured;
+  return (!configured ? '<div class="notice bad">9Router sync chưa được cấu hình.</div>' : '') +
+    '<div class="panel"><div class="panel-head"><div><h2>Providers</h2><p>Credential canonical nằm tại Portal; 9Router chỉ nhận access token.</p></div>' +
+    '<div class="toolbar"><button class="primary" data-add="claude">+ Claude</button>' +
+    '<button class="primary" data-add="codex">+ Codex</button></div></div>' +
+    (rows ? '<div class="table-wrap"><table><thead><tr><th>Account</th><th>Provider</th><th>State</th>' +
+      '<th>9Router</th><th>Access token expires</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div>' :
+      '<div class="empty">Chưa có provider account. Chọn Claude hoặc Codex để OAuth.</div>') + '</div>';
+}
 
-  return warning + '<div class="card"><h2>Sponsored accounts</h2>' +
-    '<div class="row" style="margin-bottom:14px">' +
-      '<button class="primary" data-add="claude">+ Add Claude account</button>' +
-      '<button class="primary" data-add="codex">+ Add Codex account</button></div>' +
-    (state.accounts.length
-      ? '<table><thead><tr><th>Account</th><th>Provider</th><th>Status</th>' +
-        '<th>9router</th><th>OmniRoute</th><th>Actions</th></tr></thead><tbody>' + rows + '</tbody></table>'
-      : '<p class="dim">Chưa có account nào. Nhấn +Add để OAuth.</p>') +
-    '<p class="dim">Portal không hiển thị quota, limit hay usage của bất kỳ account nào.</p></div>';
+function quotaCards(quota) {
+  if (!quota) return '<div class="quota-placeholder">Chọn Refresh để đọc quota.</div>';
+  const entries = Object.entries(quota.quotas || {});
+  if (!entries.length) return '<div class="quota-placeholder">Upstream chưa trả về quota window.</div>';
+  return '<div class="quota-grid">' + entries.map(([name, value]) => '<div class="quota-card"><div class="quota-title">' +
+    esc(name) + '</div><div class="quota-value">' + Math.round(value.remaining) + '%</div><div class="progress"><span style="width:' +
+    Math.max(0, Math.min(100, value.remaining)) + '%"></span></div><small>Reset: ' +
+    (value.resetAt ? new Date(value.resetAt).toLocaleString() : '—') + '</small></div>').join('') + '</div>';
+}
+
+function quotaView() {
+  const cards = state.accounts.map((account) => '<div class="panel"><div class="panel-head"><div><div class="account-name">' +
+    providerIcon(account.provider) + '<div><h2>' + esc(account.displayName) + '</h2><p>' + esc(account.provider) + '</p></div></div></div>' +
+    '<button data-quota="' + account.id + '">Refresh</button></div>' + quotaCards(state.quotas[account.id]) + '</div>').join('');
+  return '<div class="readonly"><span>Read-only</span>Quota Tracker không có thao tác enable, disable hoặc delete.</div>' +
+    (cards || '<div class="panel empty">Chưa có account để theo dõi quota.</div>');
 }
 
 async function adminView() {
-  const [users, auditLog] = await Promise.all([api('/api/admin/users'), api('/api/admin/audit?limit=50')]);
-  const userRows = users.map((u) => '<tr><td>' + esc(u.username) + '</td><td>' + esc(u.role) + '</td>' +
-    '<td>' + u.accountCount + '</td>' +
-    '<td>' + (u.disabled ? '<span class="badge failed">disabled</span>' : '<span class="badge active">active</span>') + '</td>' +
-    '<td class="row"><button data-reset="' + u.id + '">Reset password</button>' +
-    '<button data-disable="' + u.id + '" data-value="' + (u.disabled ? '0' : '1') + '">' +
-      (u.disabled ? 'Enable' : 'Disable') + '</button></td></tr>').join('');
-  const auditRows = auditLog.map((l) => '<tr><td class="dim">' + esc(l.created_at) + '</td>' +
-    '<td>' + esc(l.actor || '-') + '</td><td>' + esc(l.action) + '</td>' +
-    '<td class="dim">' + esc(l.target_type) + ':' + esc(l.target_id || '-') + '</td></tr>').join('');
-  return '<div class="card"><h2>Users</h2><table><thead><tr><th>Username</th><th>Role</th>' +
-    '<th>Accounts</th><th>State</th><th>Actions</th></tr></thead><tbody>' + userRows + '</tbody></table></div>' +
-    '<div class="card"><h2>Audit log</h2><table><thead><tr><th>Time</th><th>Actor</th>' +
-    '<th>Action</th><th>Target</th></tr></thead><tbody>' + auditRows + '</tbody></table></div>';
+  const [users, audit] = await Promise.all([api('/api/admin/users'), api('/api/admin/audit?limit=40')]);
+  const userRows = users.map((user) => '<tr><td><strong>' + esc(user.username) + '</strong></td><td>' + esc(user.role) +
+    '</td><td>' + user.accountCount + '</td><td>' + statusBadge(user.disabled ? 'disabled' : 'active') + '</td><td class="actions">' +
+    '<button data-reset="' + user.id + '">Reset password</button><button data-disable="' + user.id + '" data-value="' +
+    (user.disabled ? '0' : '1') + '">' + (user.disabled ? 'Enable' : 'Disable') + '</button></td></tr>').join('');
+  const auditRows = audit.map((entry) => '<tr><td>' + esc(entry.created_at) + '</td><td>' + esc(entry.actor || 'system') +
+    '</td><td>' + esc(entry.action) + '</td><td>' + esc(entry.target_type) + ':' + esc(entry.target_id || '-') + '</td></tr>').join('');
+  return '<div class="panel"><div class="panel-head"><div><h2>User Management</h2><p>Chỉ admin tạo user mới.</p></div></div>' +
+    '<div class="create-user"><input id="new-user" placeholder="username"><input id="new-pass" type="password" placeholder="password (12+ chars)">' +
+    '<select id="new-role"><option value="user">user</option><option value="admin">admin</option></select>' +
+    '<button class="primary" id="btn-create-user">Create user</button></div><div class="table-wrap"><table><thead><tr><th>Username</th><th>Role</th>' +
+    '<th>Accounts</th><th>State</th><th></th></tr></thead><tbody>' + userRows + '</tbody></table></div></div>' +
+    '<div class="panel"><div class="panel-head"><div><h2>Audit Log</h2><p>Không ghi credential hoặc token.</p></div></div>' +
+    '<div class="table-wrap"><table><thead><tr><th>Time</th><th>Actor</th><th>Action</th><th>Target</th></tr></thead><tbody>' +
+    auditRows + '</tbody></table></div></div>';
+}
+
+async function selectTab(tab) {
+  state.tab = tab;
+  render(tab === 'admin' ? await adminView() : undefined);
 }
 
 function render(extra) {
-  const session = $('session');
-  const main = $('main');
-  const banner = state.message
-    ? '<div class="msg ' + esc(state.message.kind) + '">' + esc(state.message.text) + '</div>' : '';
-
+  const banner = state.message ? '<div class="notice ' + esc(state.message.kind) + '">' + esc(state.message.text) + '</div>' : '';
   if (!state.me) {
-    session.innerHTML = '';
-    main.innerHTML = banner + loginView();
-    $('btn-login').onclick = () => submitAuth('/api/login');
-    $('btn-register').onclick = () => submitAuth('/api/register');
+    $('session').innerHTML = '';
+    $('nav').innerHTML = '';
+    $('main').innerHTML = banner + loginView();
+    $('btn-login').onclick = submitLogin;
     return;
   }
-  session.innerHTML = '<div class="row"><span class="dim">' + esc(state.me.username) +
-    ' · ' + esc(state.me.role) + '</span><button id="btn-logout">Đăng xuất</button></div>';
-  $('btn-logout').onclick = async () => { await api('/api/logout', { method: 'POST' }); state.me = null; render(); };
-
-  if (state.me.mustChangePassword) {
-    main.innerHTML = banner + passwordView();
-    $('btn-password').onclick = changePassword;
-    return;
-  }
-  const tabs = state.me.role === 'admin'
-    ? '<div class="tabs"><button data-tab="accounts">Accounts</button><button data-tab="admin">Admin</button></div>'
-    : '';
-  main.innerHTML = banner + tabs + (extra !== undefined ? extra : accountsView());
+  $('session').innerHTML = '<button id="btn-password-view">Change password</button><span>' + esc(state.me.username) +
+    '</span><button id="btn-logout">Logout</button>';
+  $('nav').innerHTML = ['providers', 'quota'].concat(state.me.role === 'admin' ? ['admin'] : []).map((tab) =>
+    '<button class="nav-item ' + (state.tab === tab ? 'active' : '') + '" data-tab="' + tab + '">' +
+    ({ providers: 'Providers', quota: 'Quota Tracker', admin: 'Admin' }[tab]) + '</button>').join('');
+  $('main').innerHTML = banner + (extra !== undefined ? extra : state.tab === 'quota' ? quotaView() : state.tab === 'providers' ? providersView() : '');
   bind();
 }
 
 function bind() {
-  document.querySelectorAll('[data-tab]').forEach((el) => {
-    el.onclick = async () => {
-      state.tab = el.dataset.tab;
-      render(state.tab === 'admin' ? await adminView() : undefined);
-    };
+  $('btn-logout').onclick = async () => { await api('/api/logout', { method: 'POST' }); location.reload(); };
+  $('btn-password-view').onclick = () => { $('main').innerHTML = passwordView(); $('btn-password').onclick = changePassword; };
+  document.querySelectorAll('[data-tab]').forEach((element) => { element.onclick = () => selectTab(element.dataset.tab); });
+  document.querySelectorAll('[data-add], [data-reauth]').forEach((element) => {
+    element.onclick = () => startOAuth(element.dataset.add || element.dataset.reauth);
   });
-  document.querySelectorAll('[data-add], [data-reauth]').forEach((el) => {
-    el.onclick = () => startOAuth(el.dataset.add || el.dataset.reauth);
-  });
-  document.querySelectorAll('[data-toggle]').forEach((el) => {
-    el.onclick = () => guard(el, async () => {
-      await api('/api/accounts/' + el.dataset.toggle + '/state',
-        { method: 'PATCH', body: JSON.stringify({ enabled: el.dataset.enabled === '1' }) });
-      await refresh();
-    });
-  });
-  document.querySelectorAll('[data-retry]').forEach((el) => {
-    el.onclick = () => guard(el, async () => {
-      await api('/api/accounts/' + el.dataset.retry + '/retry', { method: 'POST' });
-      await refresh();
-    });
-  });
-  document.querySelectorAll('[data-remove]').forEach((el) => {
-    el.onclick = () => guard(el, async () => {
-      if (!confirm('Gỡ account khỏi cả 9router và OmniRoute?')) return;
-      await api('/api/accounts/' + el.dataset.remove, { method: 'DELETE' });
-      notify('Đã gỡ account', 'ok');
-      await refresh();
-    });
-  });
-  document.querySelectorAll('[data-reset]').forEach((el) => {
-    el.onclick = () => guard(el, async () => {
-      const result = await api('/api/admin/users/' + el.dataset.reset + '/reset-password', { method: 'POST' });
-      notify('Mật khẩu tạm cho ' + result.username + ': ' + result.temporaryPassword, 'ok');
-    });
-  });
-  document.querySelectorAll('[data-disable]').forEach((el) => {
-    el.onclick = () => guard(el, async () => {
-      await api('/api/admin/users/' + el.dataset.disable,
-        { method: 'PATCH', body: JSON.stringify({ disabled: el.dataset.value === '1' }) });
-      render(await adminView());
-    });
-  });
+  document.querySelectorAll('[data-toggle]').forEach((element) => { element.onclick = () => act(element, async () => {
+    await api('/api/accounts/' + element.dataset.toggle + '/state', { method: 'PATCH', body: JSON.stringify({ enabled: element.dataset.enabled === '1' }) });
+    await refresh();
+  }); });
+  document.querySelectorAll('[data-retry]').forEach((element) => { element.onclick = () => act(element, async () => {
+    await api('/api/accounts/' + element.dataset.retry + '/retry', { method: 'POST' }); await refresh();
+  }); });
+  document.querySelectorAll('[data-remove]').forEach((element) => { element.onclick = () => act(element, async () => {
+    if (!confirm('Delete account khỏi Portal và 9Router?')) return;
+    await api('/api/accounts/' + element.dataset.remove, { method: 'DELETE' }); await refresh();
+  }); });
+  document.querySelectorAll('[data-quota]').forEach((element) => { element.onclick = () => act(element, async () => {
+    state.quotas[element.dataset.quota] = await api('/api/accounts/' + element.dataset.quota + '/quota'); render();
+  }); });
+  document.querySelectorAll('[data-reset]').forEach((element) => { element.onclick = () => act(element, async () => {
+    const result = await api('/api/admin/users/' + element.dataset.reset + '/reset-password', { method: 'POST' });
+    notify('Temporary password for ' + result.username + ': ' + result.temporaryPassword, 'ok');
+  }); });
+  document.querySelectorAll('[data-disable]').forEach((element) => { element.onclick = () => act(element, async () => {
+    await api('/api/admin/users/' + element.dataset.disable, { method: 'PATCH', body: JSON.stringify({ disabled: element.dataset.value === '1' }) });
+    render(await adminView());
+  }); });
+  if ($('btn-create-user')) $('btn-create-user').onclick = createUser;
 }
 
-async function guard(el, action) {
-  el.disabled = true;
-  try { await action(); } catch (error) { notify(error.message); } finally { el.disabled = false; }
+async function act(element, action) {
+  element.disabled = true;
+  try { await action(); } catch (error) { notify(error.message); } finally { element.disabled = false; }
 }
 
 async function startOAuth(provider) {
   try {
     const result = await api('/api/oauth/' + provider + '/start', { method: 'POST' });
-    window.location.href = result.url;
+    location.href = result.url;
   } catch (error) { notify(error.message); }
 }
 
-async function submitAuth(path) {
+async function submitLogin() {
   try {
-    state.me = await api(path, {
-      method: 'POST',
-      body: JSON.stringify({ username: $('lu').value, password: $('lp').value }),
-    });
-    state.message = null;
-    if (!state.me.mustChangePassword) await refresh(); else render();
+    state.me = await api('/api/login', { method: 'POST', body: JSON.stringify({ username: $('lu').value, password: $('lp').value }) });
+    await refresh();
   } catch (error) { notify(error.message); }
 }
 
 async function changePassword() {
   try {
-    await api('/api/password', {
-      method: 'POST',
-      body: JSON.stringify({ currentPassword: $('cp').value, newPassword: $('np').value }),
-    });
-    state.me = await api('/api/me');
-    notify('Đã đổi mật khẩu', 'ok');
-    await refresh();
+    await api('/api/password', { method: 'POST', body: JSON.stringify({ currentPassword: $('cp').value, newPassword: $('np').value }) });
+    state.me = await api('/api/me'); notify('Password updated', 'ok'); await refresh();
+  } catch (error) { notify(error.message); }
+}
+
+async function createUser() {
+  try {
+    await api('/api/admin/users', { method: 'POST', body: JSON.stringify({ username: $('new-user').value, password: $('new-pass').value, role: $('new-role').value }) });
+    notify('User created', 'ok'); render(await adminView());
   } catch (error) { notify(error.message); }
 }
 
 (async function init() {
-  const params = new URLSearchParams(window.location.search);
-  const oauth = params.get('oauth');
+  const oauth = new URLSearchParams(location.search).get('oauth');
   if (oauth) {
-    window.history.replaceState({}, '', '/');
-    state.message = oauth === 'success'
-      ? { text: 'OAuth thành công, đang đồng bộ sang 9router và OmniRoute', kind: 'ok' }
-      : { text: 'OAuth thất bại hoặc bị từ chối', kind: 'error' };
+    history.replaceState({}, '', '/');
+    state.message = oauth === 'success' ? { text: 'OAuth thành công; credential đã sync sang 9Router.', kind: 'ok' } : { text: 'OAuth thất bại.', kind: 'error' };
   }
-  try {
-    state.me = await api('/api/me');
-    if (!state.me.mustChangePassword) await refresh(); else render();
-  } catch { render(); }
+  try { state.me = await api('/api/me'); await refresh(); } catch { render(); }
 })();
 `;

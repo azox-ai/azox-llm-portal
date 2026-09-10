@@ -36,6 +36,11 @@ export function loadConfig(overrides = {}) {
     secureCookies: tls,
     sessionHours: integer('SESSION_HOURS', 24),
     oauthStateMinutes: integer('OAUTH_STATE_MINUTES', 10),
+    // The portal refreshes this far ahead of expiry and pushes the result to
+    // every router. One hour is comfortably longer than a router restart or a
+    // transient sync failure, so a router never has to refresh on its own.
+    refreshLeadMinutes: integer('REFRESH_LEAD_MINUTES', 60),
+    refreshIntervalMinutes: integer('REFRESH_INTERVAL_MINUTES', 5),
     initialAdminUsername: process.env.INIT_ADMIN_USERNAME || 'admin',
     initialAdminPassword: process.env.INIT_ADMIN_PASSWORD || '',
     claude: {
@@ -55,21 +60,16 @@ export function loadConfig(overrides = {}) {
       identityUrl: process.env.CODEX_IDENTITY_URL || '',
     },
     routers: {
-      // Endpoints are not configurable: each router's import contract is
-      // specific enough (path, body shape, auth header) that a swappable path
-      // would only ever produce a confusing runtime failure. They live in
+      // Endpoints are not configurable: the internal sync contract (path, body
+      // shape, auth header) is specific enough that a swappable path would only
+      // ever produce a confusing runtime failure. It lives in
       // src/adapters/router-adapter.js next to the code that builds the bodies.
       ninerouter: {
         name: '9router',
-        // Derived CLI token from the router's data volume, sent as x-9r-cli-token.
+        // Shared service token for POST/PUT /api/internal/portal/**, sent as a
+        // bearer credential and reachable only on the Docker network.
         baseUrl: process.env.NINEROUTER_URL || '',
-        privilegedToken: process.env.NINEROUTER_PRIVILEGED_TOKEN || '',
-      },
-      omniroute: {
-        name: 'OmniRoute',
-        // API key carrying the `manage` scope, sent as a bearer token.
-        baseUrl: process.env.OMNIROUTE_URL || '',
-        privilegedToken: process.env.OMNIROUTE_PRIVILEGED_TOKEN || '',
+        syncToken: process.env.NINEROUTER_SYNC_TOKEN || '',
       },
     },
     ...overrides,

@@ -7,18 +7,14 @@ export function fakeAdapter(key, overrides = {}) {
   return {
     configured: true,
     calls,
-    async inject(account, token) {
-      calls.push(['inject', account.id, token.accessToken]);
-      if (overrides.inject) return overrides.inject(account, token);
-      return `${key}-${account.id}`;
+    async sync(account, token) {
+      calls.push(['sync', account.id, token.accessToken, account.token_version]);
+      if (overrides.sync) return overrides.sync(account, token);
+      return `portal-${account.id}`;
     },
-    async setEnabled(id, enabled) {
-      calls.push(['setEnabled', id, enabled]);
-      if (overrides.setEnabled) return overrides.setEnabled(id, enabled);
-    },
-    async remove(id) {
-      calls.push(['remove', id]);
-      if (overrides.remove) return overrides.remove(id);
+    async remove(account) {
+      calls.push(['remove', account.id]);
+      if (overrides.remove) return overrides.remove(account);
     },
   };
 }
@@ -44,14 +40,13 @@ export async function testApp(overrides = {}) {
   });
   const adapters = overrides.adapters || {
     ninerouter: fakeAdapter('nine'),
-    omniroute: fakeAdapter('omni'),
   };
-  const built = await buildApp({ db, config, adapters, logger: false, oauthFetch: overrides.oauthFetch });
+  const built = await buildApp({ db, config, adapters, logger: false, oauthFetch: overrides.oauthFetch, startScheduler: false });
   return { ...built, adapters };
 }
 
-export async function register(app, username = 'alice', password = 'correct horse battery') {
-  const response = await app.inject({ method: 'POST', url: '/api/register', payload: { username, password } });
+export async function login(app, username = 'alice', password = 'correct horse battery') {
+  const response = await app.inject({ method: 'POST', url: '/api/login', payload: { username, password } });
   const cookie = response.cookies.find((c) => c.name === 'sp_session');
   return { response, cookie: cookie ? `${cookie.name}=${cookie.value}` : '', csrf: response.json().csrfToken };
 }

@@ -13,6 +13,7 @@ import adminRoutes from './routes/admin.js';
 import { renderApp } from './web/page.js';
 import { appScript } from './web/client.js';
 import { styles } from './web/styles.js';
+import { startRefreshScheduler } from './services/refresh.js';
 
 const MUTATING = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
@@ -88,11 +89,16 @@ export async function buildApp(options = {}) {
   await app.register(accountRoutes, { db, config, adapters, oauthFetch: options.oauthFetch });
   await app.register(adminRoutes, { db });
 
+  const stopRefreshScheduler = options.startScheduler === false
+    ? () => {}
+    : startRefreshScheduler(db, adapters, config, options.refreshFetch);
+
   app.get('/', async (_request, reply) => reply.type('text/html').send(renderApp()));
   app.get('/app.js', async (_request, reply) => reply.type('application/javascript').send(appScript));
   app.get('/styles.css', async (_request, reply) => reply.type('text/css').send(styles));
 
   app.addHook('onClose', async () => {
+    stopRefreshScheduler();
     if (!options.db) db.close();
   });
   return { app, db, config, adapters };

@@ -1,143 +1,46 @@
-# LLM Portal
+# AZOX LLM Portal
 
-Một identity plane duy nhất cho các tài khoản Claude/Codex được sponsor vào
-LLM gateway. Sponsor đăng nhập **một lần** ở đây; portal chạy OAuth, giữ
-credential, rồi inject sang cả 9router lẫn OmniRoute bằng đặc quyền admin. Hai
-router sau đó tự vận hành như hiện tại — sponsor không cần biết chúng tồn tại.
+Internal account portal for the `llm-gateway` Docker stack.
 
-## Vì sao có service này
+## Scope
 
-Trước đây, để một tài khoản phục vụ cả hai provider, sponsor phải đăng nhập vào
-UI của 9router rồi lại đăng nhập vào UI của OmniRoute. Portal thay thế hai lần
-đăng nhập đó bằng một. Nó là **control plane**, không nằm trên đường request:
-traffic inference vẫn đi LiteLLM → 9router/OmniRoute như cũ. Portal chết thì
-gateway vẫn chạy; chỉ mất khả năng thêm/sửa tài khoản sponsor.
+- Providers: Claude and Codex OAuth only.
+- Admin-created username/password users; users may change password at any time.
+- Provider accounts are strictly owner-scoped, including for administrators.
+- Quota Tracker reads upstream quota and exposes no state-changing actions.
+- Portal is the canonical credential owner. It refreshes one hour before expiry,
+  keeps the refresh token encrypted at rest, and pushes only the access token,
+  expiry and identity metadata to 9Router.
+- OmniRoute is intentionally outside this release and will use the same adapter
+  contract after the Portal + 9Router deployment is validated.
 
-## Ranh giới trách nhiệm
+## Credential sync contract
 
-| Thuộc portal | Không thuộc portal |
-|---|---|
-| Danh tính sponsor (đăng ký, đăng nhập, đổi mật khẩu) | Định tuyến, failover, retry |
-| Chạy OAuth và giữ credential đã mã hoá | Virtual key, spend, quota (LiteLLM giữ) |
-| Inject/bật/tắt/xoá connection ở hai router | Refresh token định kỳ (router tự làm) |
-| Ghi audit log các thao tác trên | Hiển thị limit/usage của tài khoản |
+Portal calls the internal Docker-network endpoint:
 
-Portal **cố ý không hiển thị quota, limit hay usage** của tài khoản sponsor —
-đúng theo yêu cầu: chỉ thấy tài khoản, không thấy limit.
+`PUT /api/internal/portal/connections/{externalId}`
 
-## Mô hình đồng bộ
+The request uses `Authorization: Bearer <service token>` and contains
+`accessToken`, `expiresAt`, `tokenVersion`, enabled state and safe identity
+metadata. `refreshToken` is neither sent nor accepted. `tokenVersion` is
+monotonic; 9Router returns `409` for stale writes.
 
-Portal không giả định hai router luôn khoẻ. Mỗi tài khoản có:
+Status and removal use `GET` and `DELETE` on the same URL. Tokens are never
+returned by any response.
 
-- `desired_enabled` — ý định của sponsor (bật hay tắt).
-- một hàng `router_connections` cho mỗi router, mang `sync_status` riêng.
+## Development
 
-Reconcile chạy `Promise.allSettled`: **một router hỏng không chặn router kia**.
-Trạng thái tổng hợp hiển thị cho sponsor là `active`, `disabled`, `pending`,
-`failed`, `needs_reauth`, hoặc `partially_synced`. Nút *Retry* chạy lại
-reconcile cho riêng phần lỗi.
-
-Xoá là **fail-closed**: portal chỉ xoá bản ghi của mình sau khi cả hai router
-xác nhận đã xoá. Nếu một router từ chối, API trả 502 và bản ghi được giữ lại —
-thà để lại một record thừa còn hơn để lại một credential mồ côi đang sống trong
-router mà portal không còn biết đến.
-
-## Bảo mật
-
-- Mật khẩu băm bằng **argon2id**. Đăng nhập với username không tồn tại vẫn chạy
-  một lần verify giả để thời gian phản hồi không lộ tài khoản nào có thật.
-- Credential OAuth mã hoá **AES-256-GCM** trước khi vào SQLite, dạng
-  `v1.iv.tag.ciphertext`. Khoá lấy từ `CREDENTIAL_ENCRYPTION_KEY`.
-  **Đổi khoá này là mất toàn bộ credential** — mọi sponsor phải OAuth lại.
-- Session cookie signed + HttpOnly + SameSite=Lax; CSRF token gắn theo session,
-  bắt buộc trên mọi POST/PUT/PATCH/DELETE. Riêng `/api/oauth/*` miễn CSRF vì
-  đã được bảo vệ bằng PKCE state dùng một lần.
-- `POST /api/register` và `POST /api/login` có rate limit riêng.
-- Sponsor chỉ thao tác được trên tài khoản mình sở hữu; quyền admin chỉ mở thêm
-  quản lý user và đọc audit log, **không** cho phép xem credential của người khác.
-- Admin cuối cùng còn active không thể tự hạ quyền hay tự khoá (409).
-- Token không bao giờ được ghi ra log, response hay audit entry.
-
-## Chạy local
-
-```bash
+```sh
 npm ci
-cp .env.example .env    # điền COOKIE_SECRET, CREDENTIAL_ENCRYPTION_KEY, INIT_ADMIN_PASSWORD
-chmod 600 .env
-npm test                # 16 test, không cần network
-npm run dev
+npm run check
+npm start
 ```
 
-Ở chế độ dev, thiếu secret thì portal tự sinh giá trị ngẫu nhiên và cảnh báo.
-Ở `NODE_ENV=production`, thiếu secret là lỗi khởi động — cố ý.
+Node.js 22.13+ is required because the portal uses `node:sqlite`.
 
-## Bootstrap admin
+## Production
 
-`INIT_ADMIN_USERNAME` + `INIT_ADMIN_PASSWORD` chỉ được seed **một lần duy nhất,
-khi bảng users còn rỗng**. Admin được seed bị đánh dấu `must_change_password`
-và phải đổi mật khẩu ở lần đăng nhập đầu. Sau đó biến env này vô hiệu — xoá nó
-khỏi `.env` là an toàn và nên làm.
-
-## Deploy
-
-Local:
-
-```bash
-docker compose up -d --build
-```
-
-Trên zbs3 (cụm `llm-gateway`), portal được thêm vào project sẵn có bằng
-override file — không sửa `/srv/llm-gateway/docker-compose.yml`, giống cách
-OmniRoute đang làm. Xem `deploy/portal.override.yml`. Mọi override phải được
-liệt kê ở **mỗi** lần chạy, nếu thiếu một file thì service trong đó bị gỡ khỏi
-desired state của project:
-
-```bash
-docker compose -p llm-gateway \
-  -f /srv/llm-gateway/docker-compose.yml \
-  -f ~/.config/llm-gateway/omniroute.override.yml \
-  -f ~/.config/llm-gateway/portal.override.yml \
-  up -d --no-deps portal
-```
-
-Portal gắn vào network `llm-gateway-net` sẵn có để gọi hai router theo tên
-container. Host port `20140` map vào Fastify port `8080`, bind trên địa chỉ
-Tailscale.
-
-### Codex callback và port 1455
-
-Codex CLI ghim callback vào `http://localhost:1455`. Trên zbs3 host port `1455`
-**đã bị `llm-gateway-9router` chiếm** cho luồng OAuth riêng của nó, nên portal
-không publish port này — hai container không thể cùng bind một host port.
-
-Vì vậy `CODEX_REDIRECT_URI` chưa được set và `POST /api/oauth/codex/start` trả
-về 400 cho tới khi chốt một trong các hướng:
-
-1. Đăng ký một redirect URI riêng cho portal (ví dụ `http://<host>:20140/api/oauth/codex/callback`)
-   ở phía OAuth client — sạch nhất, nhưng cần client id do chúng ta kiểm soát.
-2. Chuyển callback `1455` của 9router sang cơ chế khác rồi trả port cho portal.
-3. Reverse proxy `localhost:1455` trên máy của sponsor về portal.
-
-Đây là quyết định về OAuth client nên để principal chốt; portal chạy bình
-thường ở mọi chức năng khác trong lúc chờ.
-
-## Endpoint
-
-| Method | Path | Mô tả |
-|---|---|---|
-| POST | `/api/register` | Sponsor tự đăng ký (luôn role `user`) |
-| POST | `/api/login` / `/api/logout` | Phiên làm việc |
-| GET | `/api/me` | Thông tin phiên + CSRF token |
-| POST | `/api/password` | Đổi mật khẩu (huỷ mọi session cũ) |
-| GET | `/api/accounts` | Tài khoản sponsor + trạng thái từng router |
-| POST | `/api/oauth/:provider/start` | Bắt đầu OAuth (`claude` \| `codex`) |
-| GET | `/api/oauth/:provider/callback` | Nhận code, đổi token, inject |
-| PATCH | `/api/accounts/:id/state` | Bật/tắt |
-| POST | `/api/accounts/:id/retry` | Reconcile lại phần lỗi |
-| DELETE | `/api/accounts/:id` | Xoá (fail-closed) |
-| GET | `/api/router-status` | Sức khoẻ hai router |
-| GET | `/api/admin/users` | (admin) danh sách user |
-| POST | `/api/admin/users/:id/reset-password` | (admin) cấp mật khẩu tạm |
-| PATCH | `/api/admin/users/:id` | (admin) đổi role / khoá |
-| GET | `/api/admin/audit` | (admin) audit log |
-| GET | `/health/live`, `/health/ready` | Probe |
+The zbs3 deployment uses `deploy/portal.override.yml`, the external volume
+`llm-gateway_llm-portal-data`, and an env file at mode `0600`. Schema migrations
+rename and extend the prototype tables in place; the existing database is not
+reset.

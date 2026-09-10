@@ -8,11 +8,15 @@ export function renderApp() {
 <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
-<header>
-  <h1>LLM Portal</h1>
-  <div id="session"></div>
-</header>
+<aside>
+  <div class="brand"><div class="brand-mark">A</div><div><strong>LLM Portal</strong><small>AZOX AI</small></div></div>
+  <nav id="nav"></nav>
+  <div class="aside-foot">Portal owns canonical credentials</div>
+</aside>
+<div class="workspace">
+<header><div><span class="eyebrow">LLM GATEWAY</span><h1>Account Operations</h1></div><div id="session"></div></header>
 <main id="main"></main>
+</div>
 <script type="module" src="/app.js"></script>
 </body>
 </html>`;
