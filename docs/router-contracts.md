@@ -12,6 +12,10 @@ one account serves traffic through multiple routers.
 - Methods: `PUT` upsert, `GET` token-safe status, `DELETE` removal
 - Providers: `claude`, `codex`
 - Required write fields: `provider`, `accessToken`, `expiresAt`, `tokenVersion`
+- Display fields: `email` and `name` carry the full upstream account address;
+  `displayName` carries `Sponsored by: <portal user>`, which 9Router renders as
+  the second line of the connection row. `providerSpecificData.sponsoredBy`
+  keeps the raw username for programmatic use.
 - Forbidden persistence: `refreshToken`
 - Ordering: writes with `tokenVersion` less than or equal to the stored version
   receive `409`, preventing stale retries from replacing a newer token.

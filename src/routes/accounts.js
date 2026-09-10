@@ -1,7 +1,7 @@
 import { randomToken, hashToken, encryptJson, decryptJson } from '../lib/crypto.js';
 import { createVerifier } from '../oauth/pkce.js';
 import {
-  buildAuthorizeUrl, exchangeCode, resolveIdentity, maskLabel, parseCallbackInput,
+  buildAuthorizeUrl, exchangeCode, resolveIdentity, parseCallbackInput,
 } from '../oauth/client.js';
 import { ownAccount } from '../lib/validation.js';
 import { audit } from '../services/audit.js';
@@ -43,13 +43,13 @@ export default async function accountRoutes(app, { db, config, adapters, oauthFe
             desired_enabled = 1, token_version = token_version + 1, access_expires_at = ?,
             last_refresh_at = CURRENT_TIMESTAMP, last_refresh_error = NULL,
             updated_at = CURRENT_TIMESTAMP WHERE id = ?
-        `).run(maskLabel(identity.label), envelope, tokenSet.expiresAt, accountId);
+        `).run(identity.label, envelope, tokenSet.expiresAt, accountId);
       } else {
         const result = db.prepare(`
           INSERT INTO provider_accounts
             (owner_id, provider, upstream_subject, display_name, credential_envelope, access_expires_at, last_refresh_at)
           VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-        `).run(request.user.id, provider, identity.subject, maskLabel(identity.label), envelope, tokenSet.expiresAt);
+        `).run(request.user.id, provider, identity.subject, identity.label, envelope, tokenSet.expiresAt);
         accountId = Number(result.lastInsertRowid);
       }
       markPending(db, accountId);

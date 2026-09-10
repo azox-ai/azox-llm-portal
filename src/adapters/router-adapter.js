@@ -19,11 +19,6 @@ function httpError(router, status) {
   return error;
 }
 
-/**
- * Routers dedupe connections by upstream email. The portal stores only a masked
- * label, so the real address is read back out of the id_token at sync time
- * rather than kept in a second plaintext column.
- */
 function upstreamEmail(tokenSet) {
   const claims = tokenSet.idToken ? decodeJwtPayload(tokenSet.idToken) : null;
   const email = claims?.email;
@@ -88,6 +83,11 @@ export class RouterAdapter {
    * portal owns, or the two routers would invalidate each other's tokens.
    */
   async sync(account, tokenSet) {
+    const email = upstreamEmail(tokenSet);
+    // 9Router's connection row prints `name` on the first line and falls back
+    // to `displayName` for the second when it differs, which is exactly the
+    // "<account>\nSponsored by: <user>" shape the portal wants to publish.
+    const sponsor = account.owner_username ? `Sponsored by: ${account.owner_username}` : undefined;
     const providerSpecificData = {};
     if (account.provider === 'codex') {
       const chatgptAccountId = codexAccountId(tokenSet);
@@ -100,11 +100,15 @@ export class RouterAdapter {
       idToken: tokenSet.idToken ?? undefined,
       scope: tokenSet.scope ?? undefined,
       tokenType: tokenSet.tokenType ?? undefined,
-      email: upstreamEmail(tokenSet),
-      name: account.display_name ?? undefined,
+      email,
+      name: email || account.display_name || undefined,
+      displayName: sponsor,
       enabled: account.desired_enabled === 1 && account.credential_status === 'active',
       tokenVersion: account.token_version,
-      providerSpecificData,
+      providerSpecificData: {
+        ...providerSpecificData,
+        sponsoredBy: account.owner_username,
+      },
     });
     return `portal-${account.id}`;
   }

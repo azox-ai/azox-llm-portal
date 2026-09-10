@@ -46,15 +46,19 @@ body.signed-out .workspace{margin-left:0;width:100%}
 .topbar{height:66px;background:var(--surface);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 26px;position:sticky;top:0;z-index:5}
 h1{font-size:19px;margin:2px 0 0}
 .eyebrow{font-size:10px;letter-spacing:1.4px;color:var(--brand);font-weight:800}
-#session{display:flex;gap:9px;align-items:center;font-size:12px;color:var(--muted)}
-#session .who{display:flex;flex-direction:column;line-height:1.25;text-align:right}
+#session{display:flex;gap:12px;align-items:center;font-size:12px;color:var(--muted);padding-top:4px}
+#session .who{display:flex;flex-direction:column;line-height:1.25;text-align:right;padding:4px 0}
 #session .who strong{color:var(--text)}
 #session .who span{font-size:10px;text-transform:uppercase;letter-spacing:.8px;color:var(--subtle)}
-main{max-width:1180px;margin:0 auto;padding:26px}
+main{max-width:1180px;margin:0 auto;padding:30px 26px 34px}
 
 /* ---------------------------------------------------------------- panels */
 .panel{background:var(--surface);border:1px solid var(--border-subtle);border-radius:var(--radius-lg);box-shadow:var(--shadow-soft);margin-bottom:18px;overflow:hidden}
 .panel.compact{max-width:520px;padding:22px}
+.password-shell{display:flex;justify-content:center;padding-top:28px}
+.password-panel{width:min(560px,100%);margin:0}
+.password-panel .panel-head{margin:-22px -22px 20px;padding:18px 22px}
+.password-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:4px}
 .panel-head{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:17px 20px;border-bottom:1px solid var(--border-subtle);flex-wrap:wrap}
 .panel-head h2{font-size:15px;margin:0}
 .panel-head p{margin:3px 0 0;color:var(--muted);font-size:12px}
@@ -91,6 +95,7 @@ tr:hover td{background:var(--bg-alt)}
 .account-name{display:flex;gap:10px;align-items:center}
 .account-name strong,.account-name h2{display:block;margin:0}
 .account-name small{display:block;color:var(--muted);font-size:11px}
+.account-name .sponsor{display:block;color:var(--subtle);font-size:11px;margin-top:1px}
 .provider-icon{width:32px;height:32px;border-radius:9px;color:#fff;display:grid;place-items:center;font-weight:800;flex:0 0 auto}
 .provider-icon.claude{background:#d97757}
 .provider-icon.codex{background:#10a37f}

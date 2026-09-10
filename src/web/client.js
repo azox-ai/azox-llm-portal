@@ -9,6 +9,8 @@ const state = {
   users: [],
   audit: [],
   modal: null,
+  view: null,
+  passwordError: null,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -63,11 +65,12 @@ function loginView() {
 }
 
 function passwordView() {
-  return '<div class="panel compact"><div class="panel-head"><div><h2>Change password</h2>' +
-    '<p>Không bắt buộc đổi password lần đầu.</p></div></div>' +
+  return '<section class="password-shell"><div class="panel compact password-panel"><div class="panel-head"><div><h2>Change password</h2></div></div>' +
     '<label>Current password<input id="cp" type="password" autocomplete="current-password"></label>' +
     '<label>New password<input id="np" type="password" autocomplete="new-password" placeholder="Minimum 12 characters"></label>' +
-    '<button class="primary" id="btn-password">Update password</button></div>';
+    (state.passwordError ? '<div class="notice error">' + esc(state.passwordError) + '</div>' : '') +
+    '<div class="password-actions"><button id="btn-password-cancel">Cancel</button>' +
+    '<button class="primary" id="btn-password">Update password</button></div></div></section>';
 }
 
 function statusBadge(value) {
@@ -88,7 +91,7 @@ function providerCard(provider, title, subtitle) {
 function providersView() {
   const rows = state.accounts.map((account) => '<tr><td><div class="account-name">' +
     providerIcon(account.provider) + '<div><strong>' + esc(account.displayName) + '</strong><small>' +
-    esc(account.owner) + '</small></div></div></td><td>' + esc(account.provider === 'claude' ? 'Claude Code' : 'Codex') +
+    'Sponsored by: ' + esc(account.owner) + '</small></div></div></td><td>' + esc(account.provider === 'claude' ? 'Claude Code' : 'Codex') +
     '</td><td>' + statusBadge(account.status) + '</td><td>' +
     statusBadge(account.routers.ninerouter?.status || 'pending') + '</td><td>' +
     (account.accessExpiresAt ? new Date(account.accessExpiresAt).toLocaleString() : '—') + '</td><td class="actions">' +
@@ -119,7 +122,7 @@ function quotaCards(quota) {
 
 function quotaView() {
   const cards = state.accounts.map((account) => '<div class="panel"><div class="panel-head"><div><div class="account-name">' +
-    providerIcon(account.provider) + '<div><h2>' + esc(account.displayName) + '</h2><p>' + esc(account.provider) + '</p></div></div></div>' +
+    providerIcon(account.provider) + '<div><h2>' + esc(account.displayName) + '</h2><p>Sponsored by: ' + esc(account.owner) + '</p></div></div></div>' +
     '<button data-quota="' + account.id + '">Refresh</button></div>' + quotaCards(state.quotas[account.id]) + '</div>').join('');
   return '<div class="readonly"><span>Read-only</span>Quota Tracker không có enable, disable, delete hoặc mutation khác.</div>' +
     (cards || '<div class="panel empty">No accounts available for quota tracking.</div>');
@@ -199,6 +202,8 @@ function modalView() {
 }
 
 async function selectTab(tab) {
+  state.view = null;
+  state.passwordError = null;
   state.tab = tab;
   if (tab === 'admin') await loadAdmin();
   render();
@@ -216,7 +221,9 @@ function render(extra) {
     bind();
     return;
   }
-  $('page-title').textContent = ({ providers: 'Providers', quota: 'Quota Tracker', admin: 'Admin' }[state.tab] || 'Portal');
+  $('page-title').textContent = state.view === 'password'
+    ? 'Change password'
+    : ({ providers: 'Providers', quota: 'Quota Tracker', admin: 'Admin' }[state.tab] || 'Portal');
   $('session').innerHTML = '<div class="who"><strong>' + esc(state.me.username) + '</strong><span>' + esc(state.me.role) + '</span></div>' +
     '<button id="btn-password-view">Change password</button><button class="ghost" id="btn-logout">Logout</button>';
   const navItems = [
@@ -226,7 +233,15 @@ function render(extra) {
   ];
   $('nav').innerHTML = navItems.map(([tab, icon, label]) => '<button class="nav-item ' + (state.tab === tab ? 'active' : '') +
     '" data-tab="' + tab + '"><span class="ico">' + icon + '</span>' + label + '</button>').join('');
-  const content = extra !== undefined ? extra : state.tab === 'quota' ? quotaView() : state.tab === 'admin' ? adminView() : providersView();
+  const content = extra !== undefined
+    ? extra
+    : state.view === 'password'
+      ? passwordView()
+      : state.tab === 'quota'
+        ? quotaView()
+        : state.tab === 'admin'
+          ? adminView()
+          : providersView();
   $('main').innerHTML = banner + content;
   $('modal-root').innerHTML = modalView();
   bind();
@@ -243,7 +258,16 @@ function bind() {
   if ($('login-user-tab')) $('login-user-tab').onclick = () => switchLogin(false);
   if ($('login-admin-tab')) $('login-admin-tab').onclick = () => switchLogin(true);
   if ($('btn-logout')) $('btn-logout').onclick = async () => { await api('/api/logout', { method: 'POST' }); location.reload(); };
-  if ($('btn-password-view')) $('btn-password-view').onclick = () => render(passwordView());
+  if ($('btn-password-view')) $('btn-password-view').onclick = () => {
+    state.view = 'password';
+    state.passwordError = null;
+    render();
+  };
+  if ($('btn-password-cancel')) $('btn-password-cancel').onclick = () => {
+    state.view = null;
+    state.passwordError = null;
+    render();
+  };
   if ($('btn-password')) $('btn-password').onclick = changePassword;
   document.querySelectorAll('[data-tab]').forEach((element) => { element.onclick = () => selectTab(element.dataset.tab); });
   document.querySelectorAll('[data-add], [data-reauth]').forEach((element) => {
@@ -360,9 +384,14 @@ async function changePassword() {
   try {
     await api('/api/password', { method: 'POST', body: JSON.stringify({ currentPassword: $('cp').value, newPassword: $('np').value }) });
     state.me = await api('/api/me');
+    state.view = null;
+    state.passwordError = null;
     state.message = { text: 'Password updated.', kind: 'ok' };
     await refresh();
-  } catch (error) { notify(error.message); }
+  } catch (error) {
+    state.passwordError = error.message;
+    render();
+  }
 }
 
 async function createUser() {

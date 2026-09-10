@@ -1,5 +1,6 @@
 import { decryptJson } from '../lib/crypto.js';
 import { safeError } from '../lib/validation.js';
+import { decodeJwtPayload } from '../oauth/client.js';
 
 export const ROUTERS = ['ninerouter'];
 
@@ -31,7 +32,11 @@ export function markPending(db, accountId) {
 }
 
 export async function reconcileAccount(db, adapters, config, accountId) {
-  const account = db.prepare('SELECT * FROM provider_accounts WHERE id = ?').get(accountId);
+  const account = db.prepare(`
+    SELECT a.*, u.username AS owner_username
+    FROM provider_accounts a JOIN users u ON u.id = a.owner_id
+    WHERE a.id = ?
+  `).get(accountId);
   if (!account) throw new Error('Account not found');
   const tokenSet = decryptJson(account.credential_envelope, config.encryptionKey);
   const summary = {};
@@ -81,4 +86,24 @@ export function aggregateStatus(connections) {
   if (statuses.some((status) => status === 'needs_reauth')) return 'needs_reauth';
   if (statuses.some((status) => status === 'failed')) return 'failed';
   return 'pending';
+}
+
+export async function restoreFullAccountLabels(db, adapters, config) {
+  const rows = db.prepare("SELECT id, display_name, credential_envelope FROM provider_accounts WHERE display_name LIKE '%***%'").all();
+  const restored = [];
+  for (const row of rows) {
+    const tokenSet = decryptJson(row.credential_envelope, config.encryptionKey);
+    const claims = tokenSet.idToken ? decodeJwtPayload(tokenSet.idToken) : null;
+    const label = claims?.email || claims?.name;
+    if (typeof label !== 'string' || !label.trim()) continue;
+    db.prepare(`
+      UPDATE provider_accounts
+      SET display_name = ?, token_version = token_version + 1, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(label.trim(), row.id);
+    markPending(db, row.id);
+    await reconcileAccount(db, adapters, config, row.id);
+    restored.push(row.id);
+  }
+  return restored;
 }

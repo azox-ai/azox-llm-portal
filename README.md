@@ -11,6 +11,8 @@ Internal account portal for the `llm-gateway` Docker stack.
 - Login has two tabs like 9Router: username/password for users, and an
   admin-password form that signs in as `INIT_ADMIN_USERNAME`.
 - Provider accounts are strictly owner-scoped, including for administrators.
+- Account labels are the full upstream email or account name, unmasked, and
+  every surface shows `Sponsored by: <portal user>` beneath it.
 - Quota Tracker reads upstream quota and exposes no state-changing actions.
 - Portal is the canonical credential owner. It refreshes one hour before expiry,
   keeps the refresh token encrypted at rest, and pushes only the access token,

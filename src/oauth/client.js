@@ -118,11 +118,3 @@ export async function resolveIdentity(providerConfig, tokenSet, fetchImpl = fetc
   }
   throw new Error('Unable to resolve upstream account identity');
 }
-
-export function maskLabel(label) {
-  const text = String(label);
-  const at = text.indexOf('@');
-  if (at > 0) return `${text.slice(0, 1)}***${text.slice(at)}`;
-  if (text.length <= 4) return '***';
-  return `${text.slice(0, 2)}***${text.slice(-2)}`;
-}

@@ -101,7 +101,7 @@ test('router sync sends access token metadata but never a refresh token', async 
     calls.push({ url, headers: init.headers, body: JSON.parse(init.body) });
     return new Response(JSON.stringify({ id: 'router-id' }), { status: 200 });
   });
-  await adapter.sync({ id: 4, provider: 'codex', display_name: 'Codex', desired_enabled: 1, credential_status: 'active', token_version: 8 }, {
+  await adapter.sync({ id: 4, provider: 'codex', display_name: 'a@example.com', owner_username: 'anhth2', desired_enabled: 1, credential_status: 'active', token_version: 8 }, {
     accessToken: 'access', refreshToken: 'refresh', expiresAt: '2030-01-01T00:00:00.000Z',
     idToken: jwt({ email: 'a@example.com', 'https://api.openai.com/auth': { chatgpt_account_id: 'acct' } }),
   });
@@ -110,6 +110,10 @@ test('router sync sends access token metadata but never a refresh token', async 
   assert.equal(calls[0].body.tokenVersion, 8);
   assert.equal(calls[0].body.refreshToken, undefined);
   assert.equal(calls[0].body.providerSpecificData.chatgptAccountId, 'acct');
+  assert.equal(calls[0].body.providerSpecificData.sponsoredBy, 'anhth2');
+  assert.equal(calls[0].body.name, 'a@example.com');
+  assert.equal(calls[0].body.email, 'a@example.com');
+  assert.equal(calls[0].body.displayName, 'Sponsored by: anhth2');
 });
 
 test('reconcile stores the token version acknowledged by 9Router', async () => {

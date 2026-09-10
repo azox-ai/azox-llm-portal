@@ -9,13 +9,16 @@ import { testApp } from './helpers/test-app.js';
 test('client bundle parses and exposes the three product surfaces', () => {
   assert.doesNotThrow(() => new vm.Script(appScript));
   for (const label of ['Providers', 'Quota Tracker', 'Admin']) assert.match(appScript, new RegExp(label));
-  assert.doesNotMatch(appScript, /Tạo tài khoản mới|Sponsored accounts|OmniRoute/);
+  assert.doesNotMatch(appScript, /Tạo tài khoản mới|OmniRoute/);
+  assert.match(appScript, /Sponsored by: /);
   assert.match(appScript, /Read-only/);
   assert.match(appScript, /Step 1: Open OAuth URL|Open OAuth URL in browser/);
   assert.match(appScript, /Paste full Codex callback URL/);
   assert.match(appScript, /Admin login/);
   assert.match(appScript, /Reset password/);
   assert.match(appScript, /Remove user/);
+  assert.match(appScript, /btn-password-cancel/);
+  assert.doesNotMatch(appScript, /Không bắt buộc đổi password lần đầu/);
   assert.doesNotMatch(appScript, /window\.prompt/);
 });
 

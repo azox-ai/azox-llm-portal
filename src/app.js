@@ -14,6 +14,7 @@ import { renderApp } from './web/page.js';
 import { appScript } from './web/client.js';
 import { styles } from './web/styles.js';
 import { startRefreshScheduler } from './services/refresh.js';
+import { restoreFullAccountLabels } from './services/sync.js';
 
 const MUTATING = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
@@ -88,6 +89,8 @@ export async function buildApp(options = {}) {
   await app.register(authRoutes, { db, config });
   await app.register(accountRoutes, { db, config, adapters, oauthFetch: options.oauthFetch });
   await app.register(adminRoutes, { db, adapters });
+
+  await restoreFullAccountLabels(db, adapters, config);
 
   const stopRefreshScheduler = options.startScheduler === false
     ? () => {}
