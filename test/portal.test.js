@@ -5,6 +5,7 @@ import { encryptJson } from '../src/lib/crypto.js';
 import { hashPassword } from '../src/services/auth.js';
 import { reconcileAccount } from '../src/services/sync.js';
 import { refreshTokenSet } from '../src/services/refresh.js';
+import { parseCallbackInput } from '../src/oauth/client.js';
 import { authHeaders, jwt, login, testApp } from './helpers/test-app.js';
 
 async function seedUser(db, username, role = 'user') {
@@ -93,6 +94,14 @@ test('refresh preserves a rotated-or-omitted refresh token correctly', async () 
   assert.equal(result.accessToken, 'new');
   assert.equal(result.refreshToken, 'canonical');
   assert.equal(result.idToken, 'identity');
+});
+
+test('manual OAuth accepts Claude code#state and a Codex callback URL', () => {
+  assert.deepEqual(parseCallbackInput('code-1#state-1'), { code: 'code-1', state: 'state-1' });
+  assert.deepEqual(
+    parseCallbackInput('http://localhost:1455/auth/callback?code=code-2&state=state-2'),
+    { code: 'code-2', state: 'state-2' },
+  );
 });
 
 test('Quota Tracker is GET-only and cannot mutate provider state', async (t) => {

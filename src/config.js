@@ -44,19 +44,33 @@ export function loadConfig(overrides = {}) {
     initialAdminUsername: process.env.INIT_ADMIN_USERNAME || 'admin',
     initialAdminPassword: process.env.INIT_ADMIN_PASSWORD || '',
     claude: {
-      authorizeUrl: process.env.CLAUDE_AUTHORIZE_URL || '',
-      tokenUrl: process.env.CLAUDE_TOKEN_URL || '',
-      clientId: process.env.CLAUDE_CLIENT_ID || '',
-      scopes: process.env.CLAUDE_SCOPES || '',
-      redirectUri: process.env.CLAUDE_REDIRECT_URI || '',
+      authorizeUrl: process.env.CLAUDE_AUTHORIZE_URL || 'https://claude.ai/oauth/authorize',
+      tokenUrl: process.env.CLAUDE_TOKEN_URL || 'https://api.anthropic.com/v1/oauth/token',
+      // Public first-party CLI client ids. They are not secrets: the flow is
+      // PKCE, and these are the same values the vendor CLIs ship with.
+      clientId: process.env.CLAUDE_CLIENT_ID || '9d1c250a-e61b-44d9-88ed-5944d1962f5e',
+      scopes: process.env.CLAUDE_SCOPES || 'org:create_api_key user:profile user:inference',
+      // Claude's manual flow renders the code in the browser instead of
+      // redirecting to a listener, which is what lets the portal run without
+      // owning a callback port on this host.
+      redirectUri: process.env.CLAUDE_REDIRECT_URI || 'https://console.anthropic.com/oauth/code/callback',
+      extraAuthorizeParams: { code: 'true' },
       identityUrl: process.env.CLAUDE_IDENTITY_URL || '',
     },
     codex: {
-      authorizeUrl: process.env.CODEX_AUTHORIZE_URL || '',
-      tokenUrl: process.env.CODEX_TOKEN_URL || '',
-      clientId: process.env.CODEX_CLIENT_ID || '',
-      scopes: process.env.CODEX_SCOPES || '',
-      redirectUri: process.env.CODEX_REDIRECT_URI || '',
+      authorizeUrl: process.env.CODEX_AUTHORIZE_URL || 'https://auth.openai.com/oauth/authorize',
+      tokenUrl: process.env.CODEX_TOKEN_URL || 'https://auth.openai.com/oauth/token',
+      clientId: process.env.CODEX_CLIENT_ID || 'app_EMoamEEZ73f0CkXaXp7hrann',
+      scopes: process.env.CODEX_SCOPES || 'openid profile email offline_access',
+      // Codex pins its callback to localhost:1455, which llm-gateway-9router
+      // already binds on this host. The portal therefore never listens for the
+      // redirect: the operator pastes the resulting URL back into the UI.
+      redirectUri: process.env.CODEX_REDIRECT_URI || 'http://localhost:1455/auth/callback',
+      extraAuthorizeParams: {
+        id_token_add_organizations: 'true',
+        codex_cli_simplified_flow: 'true',
+        originator: 'codex_cli_rs',
+      },
       identityUrl: process.env.CODEX_IDENTITY_URL || '',
     },
     routers: {

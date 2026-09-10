@@ -1,4 +1,5 @@
 import { challengeFor } from './pkce.js';
+import { createHash } from 'node:crypto';
 
 export function decodeJwtPayload(token) {
   const parts = String(token).split('.');
@@ -19,7 +20,33 @@ export function buildAuthorizeUrl(providerConfig, { state, verifier }) {
   url.searchParams.set('code_challenge', challengeFor(verifier));
   url.searchParams.set('code_challenge_method', 'S256');
   if (providerConfig.scopes) url.searchParams.set('scope', providerConfig.scopes);
+  for (const [key, value] of Object.entries(providerConfig.extraAuthorizeParams ?? {})) {
+    url.searchParams.set(key, value);
+  }
   return url.toString();
+}
+
+/**
+ * Accepts either a bare authorization code or the full callback URL the
+ * operator copied out of the browser. Claude appends `#state` to the code in
+ * its manual flow, so that form is normalized here too.
+ */
+export function parseCallbackInput(input) {
+  const text = String(input ?? '').trim();
+  if (!text) return null;
+  let code = text;
+  let state = null;
+  if (text.startsWith('http://') || text.startsWith('https://')) {
+    const url = new URL(text);
+    code = url.searchParams.get('code') ?? '';
+    state = url.searchParams.get('state');
+  }
+  if (code.includes('#')) {
+    const [rawCode, rawState] = code.split('#');
+    code = rawCode;
+    state = state || rawState || null;
+  }
+  return code ? { code, state } : null;
 }
 
 /**
@@ -80,6 +107,14 @@ export async function resolveIdentity(providerConfig, tokenSet, fetchImpl = fetc
         return { subject: String(subject), label: profile.email || profile.name || String(subject) };
       }
     }
+  }
+  // Claude consumer OAuth currently returns no id_token/userinfo endpoint. Use
+  // a one-way fingerprint of the canonical refresh token as a stable internal
+  // subject; the value is never returned or logged. Existing rows keep this
+  // subject across future access-token refreshes.
+  if (tokenSet.refreshToken) {
+    const subject = createHash('sha256').update(tokenSet.refreshToken).digest('hex');
+    return { subject: `oauth:${subject}`, label: 'Claude OAuth account' };
   }
   throw new Error('Unable to resolve upstream account identity');
 }

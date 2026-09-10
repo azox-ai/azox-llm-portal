@@ -1,7 +1,7 @@
 import { randomToken, hashToken, encryptJson, decryptJson } from '../lib/crypto.js';
 import { createVerifier } from '../oauth/pkce.js';
 import {
-  buildAuthorizeUrl, exchangeCode, resolveIdentity, maskLabel,
+  buildAuthorizeUrl, exchangeCode, resolveIdentity, maskLabel, parseCallbackInput,
 } from '../oauth/client.js';
 import { ownAccount } from '../lib/validation.js';
 import { audit } from '../services/audit.js';
@@ -12,6 +12,63 @@ import { fetchQuota } from '../services/quota.js';
 import { refreshAccount } from '../services/refresh.js';
 
 export default async function accountRoutes(app, { db, config, adapters, oauthFetch = {} }) {
+  async function completeOauth(request, reply, provider, code, state, redirect) {
+    if (!code || !state || !['claude', 'codex'].includes(provider)) {
+      return reply.code(400).send({ error: 'Invalid OAuth callback' });
+    }
+    const saved = db.prepare(`
+      DELETE FROM oauth_states
+      WHERE state_hash = ? AND user_id = ? AND provider = ? AND expires_at > CURRENT_TIMESTAMP
+      RETURNING verifier
+    `).get(hashToken(state), request.user.id, provider);
+    if (!saved) return reply.code(400).send({ error: 'OAuth state expired or invalid' });
+
+    try {
+      const providerConfig = config[provider];
+      const fetchImpl = oauthFetch[provider] || fetch;
+      const tokenSet = await exchangeCode(providerConfig, { code, verifier: saved.verifier }, fetchImpl);
+      const identity = await resolveIdentity(providerConfig, tokenSet, fetchImpl);
+      const duplicate = db.prepare('SELECT id, owner_id FROM provider_accounts WHERE provider = ? AND upstream_subject = ?')
+        .get(provider, identity.subject);
+      if (duplicate && duplicate.owner_id !== request.user.id) {
+        return reply.code(409).send({ error: 'This account is already registered by another user' });
+      }
+
+      let accountId;
+      const envelope = encryptJson(tokenSet, config.encryptionKey);
+      if (duplicate) {
+        accountId = duplicate.id;
+        db.prepare(`
+          UPDATE provider_accounts SET display_name = ?, credential_envelope = ?, credential_status = 'active',
+            desired_enabled = 1, token_version = token_version + 1, access_expires_at = ?,
+            last_refresh_at = CURRENT_TIMESTAMP, last_refresh_error = NULL,
+            updated_at = CURRENT_TIMESTAMP WHERE id = ?
+        `).run(maskLabel(identity.label), envelope, tokenSet.expiresAt, accountId);
+      } else {
+        const result = db.prepare(`
+          INSERT INTO provider_accounts
+            (owner_id, provider, upstream_subject, display_name, credential_envelope, access_expires_at, last_refresh_at)
+          VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        `).run(request.user.id, provider, identity.subject, maskLabel(identity.label), envelope, tokenSet.expiresAt);
+        accountId = Number(result.lastInsertRowid);
+      }
+      markPending(db, accountId);
+      audit(db, {
+        actorId: request.user.id, action: duplicate ? 'account.reauthenticated' : 'account.added',
+        targetType: 'account', targetId: accountId, detail: provider, ip: request.ip,
+      });
+      const routers = await reconcileAccount(db, adapters, config, accountId);
+      return redirect
+        ? reply.redirect(`/?oauth=success&account=${accountId}`)
+        : reply.send({ ok: true, accountId, routers });
+    } catch (exchangeError) {
+      request.log.warn({ err: exchangeError, provider }, 'OAuth callback failed');
+      return redirect
+        ? reply.redirect('/?oauth=failed')
+        : reply.code(502).send({ error: 'OAuth exchange failed' });
+    }
+  }
+
   app.get('/api/accounts', async (request, reply) => {
     if (!request.user) return reply.code(401).send({ error: 'Not authenticated' });
     const rows = db.prepare(`
@@ -71,56 +128,16 @@ export default async function accountRoutes(app, { db, config, adapters, oauthFe
     const { provider } = request.params;
     const { code, state, error } = request.query;
     if (error) return reply.redirect('/?oauth=denied');
-    if (!code || !state || !['claude', 'codex'].includes(provider)) {
-      return reply.code(400).send({ error: 'Invalid OAuth callback' });
-    }
-    const saved = db.prepare(`
-      DELETE FROM oauth_states
-      WHERE state_hash = ? AND user_id = ? AND provider = ? AND expires_at > CURRENT_TIMESTAMP
-      RETURNING verifier
-    `).get(hashToken(state), request.user.id, provider);
-    if (!saved) return reply.code(400).send({ error: 'OAuth state expired or invalid' });
+    return completeOauth(request, reply, provider, code, state, true);
+  });
 
-    try {
-      const providerConfig = config[provider];
-      const fetchImpl = oauthFetch[provider] || fetch;
-      const tokenSet = await exchangeCode(providerConfig, { code, verifier: saved.verifier }, fetchImpl);
-      const identity = await resolveIdentity(providerConfig, tokenSet, fetchImpl);
-      const duplicate = db.prepare('SELECT id, owner_id FROM provider_accounts WHERE provider = ? AND upstream_subject = ?')
-        .get(provider, identity.subject);
-      if (duplicate && duplicate.owner_id !== request.user.id) {
-        return reply.code(409).send({ error: 'This account is already registered by another user' });
-      }
-
-      let accountId;
-      const envelope = encryptJson(tokenSet, config.encryptionKey);
-      if (duplicate) {
-        accountId = duplicate.id;
-        db.prepare(`
-          UPDATE provider_accounts SET display_name = ?, credential_envelope = ?, credential_status = 'active',
-            desired_enabled = 1, token_version = token_version + 1, access_expires_at = ?,
-            last_refresh_at = CURRENT_TIMESTAMP, last_refresh_error = NULL,
-            updated_at = CURRENT_TIMESTAMP WHERE id = ?
-        `).run(maskLabel(identity.label), envelope, tokenSet.expiresAt, accountId);
-      } else {
-        const result = db.prepare(`
-          INSERT INTO provider_accounts
-            (owner_id, provider, upstream_subject, display_name, credential_envelope, access_expires_at, last_refresh_at)
-          VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-        `).run(request.user.id, provider, identity.subject, maskLabel(identity.label), envelope, tokenSet.expiresAt);
-        accountId = Number(result.lastInsertRowid);
-      }
-      markPending(db, accountId);
-      audit(db, {
-        actorId: request.user.id, action: duplicate ? 'account.reauthenticated' : 'account.added',
-        targetType: 'account', targetId: accountId, detail: provider, ip: request.ip,
-      });
-      await reconcileAccount(db, adapters, config, accountId);
-      return reply.redirect(`/?oauth=success&account=${accountId}`);
-    } catch (exchangeError) {
-      request.log.warn({ err: exchangeError, provider }, 'OAuth callback failed');
-      return reply.redirect('/?oauth=failed');
+  app.post('/api/oauth/:provider/complete', async (request, reply) => {
+    if (!request.user) return reply.code(401).send({ error: 'Not authenticated' });
+    const parsed = parseCallbackInput(request.body?.callback);
+    if (!parsed?.code || !parsed.state) {
+      return reply.code(400).send({ error: 'Paste the complete callback URL or code#state' });
     }
+    return completeOauth(request, reply, request.params.provider, parsed.code, parsed.state, false);
   });
 
   app.patch('/api/accounts/:id/state', async (request, reply) => {

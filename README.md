@@ -14,6 +14,15 @@ Internal account portal for the `llm-gateway` Docker stack.
 - OmniRoute is intentionally outside this release and will use the same adapter
   contract after the Portal + 9Router deployment is validated.
 
+## Adding a provider account
+
+OAuth uses a manual callback because `llm-gateway-9router` owns ports 1455 and
+54545 on this host. The portal opens the vendor authorize page in a new tab and
+the operator pastes the result back: Claude returns `code#state` in the browser,
+Codex redirects to `http://localhost:1455/auth/callback?...` which is copied
+whole from the address bar. `POST /api/oauth/:provider/complete` then performs
+the PKCE exchange server-side.
+
 ## Credential sync contract
 
 Portal calls the internal Docker-network endpoint:

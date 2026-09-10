@@ -169,7 +169,18 @@ async function act(element, action) {
 async function startOAuth(provider) {
   try {
     const result = await api('/api/oauth/' + provider + '/start', { method: 'POST' });
-    location.href = result.url;
+    window.open(result.url, '_blank', 'noopener,noreferrer');
+    const callback = window.prompt(
+      provider === 'claude'
+        ? 'OAuth xong, paste authorization code (code#state) vào đây:'
+        : 'OAuth xong, paste toàn bộ callback URL từ address bar vào đây:'
+    );
+    if (!callback) return;
+    await api('/api/oauth/' + provider + '/complete', {
+      method: 'POST', body: JSON.stringify({ callback }),
+    });
+    notify('OAuth thành công; credential đã sync sang 9Router.', 'ok');
+    await refresh();
   } catch (error) { notify(error.message); }
 }
 
