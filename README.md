@@ -80,13 +80,46 @@ khỏi `.env` là an toàn và nên làm.
 
 ## Deploy
 
+Local:
+
 ```bash
 docker compose up -d --build
 ```
 
-Compose gắn vào network `llm-gateway` sẵn có để gọi hai router theo tên
-container. Host ports `20140` (UI) và `1455` (Codex callback) cùng map vào Fastify
-port `8080`; Codex ghim callback OAuth vào host port `1455`.
+Trên zbs3 (cụm `llm-gateway`), portal được thêm vào project sẵn có bằng
+override file — không sửa `/srv/llm-gateway/docker-compose.yml`, giống cách
+OmniRoute đang làm. Xem `deploy/portal.override.yml`. Mọi override phải được
+liệt kê ở **mỗi** lần chạy, nếu thiếu một file thì service trong đó bị gỡ khỏi
+desired state của project:
+
+```bash
+docker compose -p llm-gateway \
+  -f /srv/llm-gateway/docker-compose.yml \
+  -f ~/.config/llm-gateway/omniroute.override.yml \
+  -f ~/.config/llm-gateway/portal.override.yml \
+  up -d --no-deps portal
+```
+
+Portal gắn vào network `llm-gateway-net` sẵn có để gọi hai router theo tên
+container. Host port `20140` map vào Fastify port `8080`, bind trên địa chỉ
+Tailscale.
+
+### Codex callback và port 1455
+
+Codex CLI ghim callback vào `http://localhost:1455`. Trên zbs3 host port `1455`
+**đã bị `llm-gateway-9router` chiếm** cho luồng OAuth riêng của nó, nên portal
+không publish port này — hai container không thể cùng bind một host port.
+
+Vì vậy `CODEX_REDIRECT_URI` chưa được set và `POST /api/oauth/codex/start` trả
+về 400 cho tới khi chốt một trong các hướng:
+
+1. Đăng ký một redirect URI riêng cho portal (ví dụ `http://<host>:20140/api/oauth/codex/callback`)
+   ở phía OAuth client — sạch nhất, nhưng cần client id do chúng ta kiểm soát.
+2. Chuyển callback `1455` của 9router sang cơ chế khác rồi trả port cho portal.
+3. Reverse proxy `localhost:1455` trên máy của sponsor về portal.
+
+Đây là quyết định về OAuth client nên để principal chốt; portal chạy bình
+thường ở mọi chức năng khác trong lúc chờ.
 
 ## Endpoint
 
