@@ -1,0 +1,50 @@
+# Compose override that adds the portal to the existing `llm-gateway` project
+# without editing /srv/llm-gateway/docker-compose.yml, which this account cannot
+# write and which is owned by the gateway stack. Same pattern OmniRoute uses.
+#
+# Apply with:
+#   docker compose -p llm-gateway \
+#     -f /srv/llm-gateway/docker-compose.yml \
+#     -f ~/.config/llm-gateway/omniroute.override.yml \
+#     -f ~/.config/llm-gateway/portal.override.yml \
+#     up -d portal
+#
+# Every override file must be listed on every invocation: omitting one would
+# remove that service from the project's desired state.
+services:
+  portal:
+    image: llm-gateway/llm-portal:0.1.0
+    container_name: llm-gateway-portal
+    restart: unless-stopped
+    env_file:
+      - /home/azox-docker-ops/.config/llm-gateway/portal.env
+    environment:
+      HOST: 0.0.0.0
+      PORT: 8080
+      DATABASE_PATH: /data/portal.db
+      NODE_ENV: production
+    ports:
+      # Tailscale-only listener, matching the rest of the gateway.
+      - "100.88.64.101:20140:8080"
+      # NOTE: port 1455 is deliberately NOT published here — llm-gateway-9router
+      # already binds it for its own Codex OAuth callback. The portal's Codex
+      # redirect URI must therefore use its own port, and Codex's fixed-port
+      # expectation is handled by the operator's browser reaching 20140.
+    volumes:
+      - llm-portal-data:/data
+    networks:
+      - llm-gateway-net
+
+# Declared external and pre-created so the portal's data survives a stack
+# rebuild independently of this override file, matching how omniroute-data is
+# wired. Create it once before the first deploy:
+#   docker volume create llm-gateway_llm-portal-data
+volumes:
+  llm-portal-data:
+    external: true
+    name: llm-gateway_llm-portal-data
+
+# Merged with the base project's declaration rather than redefined — the network
+# is created and owned by /srv/llm-gateway/docker-compose.yml.
+networks:
+  llm-gateway-net:
