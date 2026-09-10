@@ -45,21 +45,21 @@ export function loadConfig(overrides = {}) {
       identityUrl: process.env.CODEX_IDENTITY_URL || '',
     },
     routers: {
+      // Endpoints are not configurable: each router's import contract is
+      // specific enough (path, body shape, auth header) that a swappable path
+      // would only ever produce a confusing runtime failure. They live in
+      // src/adapters/router-adapter.js next to the code that builds the bodies.
       ninerouter: {
         name: '9router',
+        // Derived CLI token from the router's data volume, sent as x-9r-cli-token.
         baseUrl: process.env.NINEROUTER_URL || '',
         privilegedToken: process.env.NINEROUTER_PRIVILEGED_TOKEN || '',
-        injectPath: process.env.NINEROUTER_INJECT_PATH || '/api/admin/provider-connections/import',
-        statePath: process.env.NINEROUTER_STATE_PATH || '/api/admin/provider-connections/{id}',
-        deletePath: process.env.NINEROUTER_DELETE_PATH || '/api/admin/provider-connections/{id}',
       },
       omniroute: {
         name: 'OmniRoute',
+        // API key carrying the `manage` scope, sent as a bearer token.
         baseUrl: process.env.OMNIROUTE_URL || '',
         privilegedToken: process.env.OMNIROUTE_PRIVILEGED_TOKEN || '',
-        injectPath: process.env.OMNIROUTE_INJECT_PATH || '/api/admin/provider-connections/import',
-        statePath: process.env.OMNIROUTE_STATE_PATH || '/api/admin/provider-connections/{id}',
-        deletePath: process.env.OMNIROUTE_DELETE_PATH || '/api/admin/provider-connections/{id}',
       },
     },
     ...overrides,

@@ -29,7 +29,7 @@ tr:last-child td { border-bottom:none; }
 .badge.active { color:var(--ok); border-color:var(--ok); }
 .badge.disabled { color:var(--dim); }
 .badge.failed, .badge.needs_reauth { color:var(--bad); border-color:var(--bad); }
-.badge.partially_synced, .badge.pending { color:var(--warn); border-color:var(--warn); }
+.badge.partially_synced, .badge.pending, .badge.unsupported { color:var(--warn); border-color:var(--warn); }
 .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
 .msg { padding:10px 12px; border-radius:6px; margin-bottom:14px; font-size:13px; }
 .msg.error { background:rgba(248,81,73,.12); border:1px solid var(--bad); color:var(--bad); }

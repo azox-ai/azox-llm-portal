@@ -53,7 +53,10 @@ CREATE TABLE IF NOT EXISTS router_connections (
   account_id INTEGER NOT NULL REFERENCES sponsored_accounts(id) ON DELETE CASCADE,
   router TEXT NOT NULL CHECK (router IN ('ninerouter', 'omniroute')),
   remote_id TEXT,
-  sync_status TEXT NOT NULL DEFAULT 'pending' CHECK (sync_status IN ('pending', 'active', 'disabled', 'failed', 'needs_reauth')),
+  -- 'unsupported' means this router structurally cannot hold this provider's
+  -- credential (no import route exists), as opposed to 'failed', which is a
+  -- fault worth retrying.
+  sync_status TEXT NOT NULL DEFAULT 'pending' CHECK (sync_status IN ('pending', 'active', 'disabled', 'failed', 'needs_reauth', 'unsupported')),
   last_error TEXT,
   last_synced_at TEXT,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,

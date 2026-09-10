@@ -85,7 +85,8 @@ docker compose up -d --build
 ```
 
 Compose gắn vào network `llm-gateway` sẵn có để gọi hai router theo tên
-container. Cổng `1455` phải mở vì Codex ghim callback OAuth vào đúng cổng đó.
+container. Host ports `20140` (UI) và `1455` (Codex callback) cùng map vào Fastify
+port `8080`; Codex ghim callback OAuth vào host port `1455`.
 
 ## Endpoint
 

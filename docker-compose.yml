@@ -18,8 +18,9 @@ services:
     ports:
       # Tailscale-only listener, matching the rest of the gateway.
       - "127.0.0.1:20140:8080"
-      # Codex pins its OAuth callback to port 1455 on the host.
-      - "127.0.0.1:1455:1455"
+      # Codex pins its OAuth callback to port 1455 on the host. Both host
+      # ports reach the same Fastify listener inside the container.
+      - "127.0.0.1:1455:8080"
     networks:
       - llm-gateway
 

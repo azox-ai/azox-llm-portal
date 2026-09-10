@@ -63,11 +63,16 @@ export async function reconcileAccount(db, adapters, config, accountId) {
       });
       summary[router] = status;
     } else {
+      // A router that has no import route for this provider is a known
+      // capability gap, not a transient fault: retrying can never fix it, so it
+      // is recorded distinctly instead of masquerading as a failure the
+      // sponsor is expected to act on.
+      const status = result.reason?.code === 'injection_unsupported' ? 'unsupported' : 'failed';
       upsertConnection(db, accountId, router, {
-        status: 'failed',
+        status,
         error: safeError(result.reason),
       });
-      summary[router] = 'failed';
+      summary[router] = status;
     }
   });
   return summary;
@@ -97,5 +102,11 @@ export function aggregateStatus(connections) {
     return statuses.some((s) => s === 'active') ? 'partially_synced' : 'failed';
   }
   if (statuses.some((s) => s === 'needs_reauth')) return 'needs_reauth';
+  // Serving from one router while the other structurally cannot hold this
+  // credential is still degraded — the account has lost ADR-0025 failover, and
+  // reporting it as `active` would hide that.
+  if (statuses.some((s) => s === 'unsupported')) {
+    return statuses.some((s) => s === 'active') ? 'partially_synced' : 'unsupported';
+  }
   return 'pending';
 }
