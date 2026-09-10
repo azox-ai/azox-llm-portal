@@ -38,6 +38,21 @@ test('self-registration is absent and an admin creates users without forced pass
   assert.equal(alice.response.json().mustChangePassword, undefined);
 });
 
+test('admin login uses INIT_ADMIN_PASSWORD independently of the database password', async (t) => {
+  const { app, db } = await testApp({ config: { initialAdminUsername: 'admin', initialAdminPassword: 'configured init password' } });
+  t.after(() => { app.close(); db.close(); });
+  await seedUser(db, 'admin', 'admin');
+  const loginWithInit = await app.inject({
+    method: 'POST', url: '/api/login/admin', payload: { password: 'configured init password' },
+  });
+  assert.equal(loginWithInit.statusCode, 200);
+  assert.equal(loginWithInit.json().role, 'admin');
+  const loginWithDbPassword = await app.inject({
+    method: 'POST', url: '/api/login/admin', payload: { password: 'correct horse battery' },
+  });
+  assert.equal(loginWithDbPassword.statusCode, 401);
+});
+
 test('admin resets a chosen password and removes a user from routers first', async (t) => {
   const { app, db, config, adapters } = await testApp();
   t.after(() => { app.close(); db.close(); });

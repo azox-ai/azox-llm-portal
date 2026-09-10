@@ -1,4 +1,5 @@
 import { validPassword } from '../lib/validation.js';
+import { createHash, timingSafeEqual } from 'node:crypto';
 import {
   hashPassword, verifyPassword, createSession, destroySession, destroyUserSessions,
 } from '../services/auth.js';
@@ -48,7 +49,20 @@ export default async function authRoutes(app, { db, config }) {
   });
 
   app.post('/api/login/admin', { config: { rateLimit: { max: 10, timeWindow: '5 minutes' } } }, async (request, reply) => {
-    return authenticate(request, reply, config.initialAdminUsername, request.body?.password);
+    const supplied = typeof request.body?.password === 'string' ? request.body.password : '';
+    const expected = config.initialAdminPassword || '';
+    const suppliedDigest = createHash('sha256').update(supplied).digest();
+    const expectedDigest = createHash('sha256').update(expected).digest();
+    const valid = Boolean(expected) && timingSafeEqual(suppliedDigest, expectedDigest);
+    const user = db.prepare("SELECT * FROM users WHERE username = ? AND role = 'admin' AND disabled = 0")
+      .get(config.initialAdminUsername);
+    if (!valid || !user) {
+      audit(db, { action: 'admin.login_failed', targetType: 'user', targetId: config.initialAdminUsername, ip: request.ip });
+      return reply.code(401).send({ error: 'Invalid admin password' });
+    }
+    const session = issue(reply, user.id);
+    audit(db, { actorId: user.id, action: 'admin.login', targetType: 'user', targetId: user.id, ip: request.ip });
+    return reply.send({ id: user.id, username: user.username, role: user.role, csrfToken: session.csrf });
   });
 
   app.post('/api/logout', async (request, reply) => {
