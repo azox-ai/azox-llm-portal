@@ -104,6 +104,20 @@ test('manual OAuth accepts Claude code#state and a Codex callback URL', () => {
   );
 });
 
+test('bodyless POST actions are accepted by the API', async (t) => {
+  const { app, db } = await testApp();
+  t.after(() => { app.close(); db.close(); });
+  await seedUser(db, 'alice');
+  const auth = await login(app, 'alice');
+  const start = await app.inject({ method: 'POST', url: '/api/oauth/claude/start', headers: authHeaders(auth) });
+  assert.equal(start.statusCode, 200);
+  const authorizeUrl = new URL(start.json().url);
+  assert.equal(authorizeUrl.searchParams.get('client_id'), 'client');
+  assert.ok(authorizeUrl.searchParams.get('code_challenge'));
+  const logout = await app.inject({ method: 'POST', url: '/api/logout', headers: authHeaders(auth) });
+  assert.equal(logout.statusCode, 200);
+});
+
 test('Quota Tracker is GET-only and cannot mutate provider state', async (t) => {
   const { app, db, config } = await testApp({ oauthFetch: {
     claudeQuota: async () => new Response(JSON.stringify({ five_hour: { utilization: 25, resets_at: '2030-01-01T00:00:00Z' } }), { status: 200 }),

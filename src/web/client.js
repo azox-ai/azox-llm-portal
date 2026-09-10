@@ -5,7 +5,10 @@ const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (char) =>
   ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
 
 async function api(path, options = {}) {
-  const headers = { 'content-type': 'application/json', ...(options.headers || {}) };
+  // Only declare a JSON body when one is actually sent: Fastify rejects a
+  // bodyless POST that claims content-type application/json with 400, which
+  // silently broke every action button that takes no payload.
+  const headers = { ...(options.body ? { 'content-type': 'application/json' } : {}), ...(options.headers || {}) };
   if (state.me?.csrfToken) headers['x-csrf-token'] = state.me.csrfToken;
   const response = await fetch(path, { ...options, headers, credentials: 'same-origin' });
   const text = await response.text();
