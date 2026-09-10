@@ -229,4 +229,34 @@ export default async function accountRoutes(app, { db, config, adapters, oauthFe
     if (!request.user) return reply.code(401).send({ error: 'Not authenticated' });
     return Object.fromEntries(ROUTERS.map((key) => [key, { configured: adapters[key].configured }]));
   });
+
+  // Sponsors is a read-only directory: every signed-in user sees which portal
+  // user sponsors which upstream account, grouped by sponsor. It exposes no
+  // credential material and no mutation.
+  app.get('/api/sponsors', async (request, reply) => {
+    if (!request.user) return reply.code(401).send({ error: 'Not authenticated' });
+    const rows = db.prepare(`
+      SELECT u.id AS owner_id, u.username AS owner_username, a.id, a.provider, a.display_name,
+             a.desired_enabled, a.credential_status, a.access_expires_at
+      FROM provider_accounts a JOIN users u ON u.id = a.owner_id
+      ORDER BY u.username COLLATE NOCASE, a.provider, a.id
+    `).all();
+    const connections = db.prepare('SELECT router, sync_status FROM router_connections WHERE account_id = ?');
+    const groups = new Map();
+    for (const row of rows) {
+      const statusMap = Object.fromEntries(connections.all(row.id).map((c) => [c.router, c.sync_status]));
+      if (!groups.has(row.owner_id)) groups.set(row.owner_id, { username: row.owner_username, accounts: [] });
+      groups.get(row.owner_id).accounts.push({
+        id: row.id,
+        provider: row.provider,
+        displayName: row.display_name,
+        enabled: Boolean(row.desired_enabled),
+        credentialStatus: row.credential_status,
+        accessExpiresAt: row.access_expires_at,
+        status: aggregateStatus(statusMap),
+        routers: Object.fromEntries(ROUTERS.map((key) => [key, { status: statusMap[key] ?? 'pending' }])),
+      });
+    }
+    return [...groups.values()];
+  });
 }

@@ -6,6 +6,7 @@ const state = {
   tab: 'providers',
   message: null,
   quotas: {},
+  sponsors: [],
   users: [],
   audit: [],
   modal: null,
@@ -42,7 +43,26 @@ function notify(text, kind = 'error') {
 async function refresh() {
   [state.accounts, state.routers] = await Promise.all([api('/api/accounts'), api('/api/router-status')]);
   if (state.me?.role === 'admin' && state.tab === 'admin') await loadAdmin();
+  if (state.tab === 'sponsors') await loadSponsors();
   render();
+  // Quota is part of the Providers surface, so it loads with the page instead
+  // of waiting for a click. Failures stay silent per row.
+  loadQuotas();
+}
+
+async function loadQuotas() {
+  await Promise.all(state.accounts.map(async (account) => {
+    try {
+      state.quotas[account.id] = await api('/api/accounts/' + account.id + '/quota');
+    } catch {
+      state.quotas[account.id] = { plan: null, quotas: {} };
+    }
+  }));
+  render();
+}
+
+async function loadSponsors() {
+  state.sponsors = await api('/api/sponsors');
 }
 
 async function loadAdmin() {
@@ -97,17 +117,16 @@ function providersView() {
     (account.accessExpiresAt ? new Date(account.accessExpiresAt).toLocaleString() : '—') + '</td><td class="actions">' +
     '<button data-toggle="' + account.id + '" data-enabled="' + (account.enabled ? '0' : '1') + '">' +
     (account.enabled ? 'Disable' : 'Enable') + '</button><button data-retry="' + account.id + '">Sync</button>' +
-    '<button data-quota="' + account.id + '">Quota</button>' +
     '<button data-reauth="' + esc(account.provider) + '">Re-auth</button>' +
     '<button class="danger" data-remove-account="' + account.id + '">Delete</button></td></tr>' +
     // Quota Tracker lives here now: the same row it belongs to, read-only.
     '<tr class="quota-row"><td colspan="6">' + quotaStrip(account) + '</td></tr>').join('');
   const configured = state.routers.ninerouter?.configured;
   return (!configured ? '<div class="notice bad">9Router sync chưa được cấu hình.</div>' : '') +
-    '<div class="panel"><div class="panel-head"><div><h2>Add provider</h2><p>Flow OAuth hai bước giống 9Router.</p></div></div>' +
+    '<div class="panel"><div class="panel-head"><div><h2>Add provider</h2></div></div>' +
     '<div class="grid-cards">' + providerCard('claude', 'Claude Code', 'Anthropic OAuth account') +
     providerCard('codex', 'Codex', 'OpenAI ChatGPT OAuth account') + '</div></div>' +
-    '<div class="panel"><div class="panel-head"><div><h2>Connections</h2><p>Quota hiển thị ngay dưới mỗi account. State 9Router lấy trực tiếp từ router khi bấm Sync.</p></div></div>' +
+    '<div class="panel"><div class="panel-head"><div><h2>Connections</h2></div></div>' +
     (rows ? '<div class="table-wrap"><table><thead><tr><th>Account</th><th>Provider</th><th>State</th>' +
       '<th>9Router</th><th>Access token expires</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div>' :
       '<div class="empty">No provider connections yet.</div>') + '</div>';
@@ -115,23 +134,30 @@ function providersView() {
 
 function quotaStrip(account) {
   const quota = state.quotas[account.id];
-  const readOnly = '<span class="quota-readonly">Quota Tracker · read-only</span>';
-  if (!quota) {
-    return '<div class="quota-inline">' + readOnly +
-      '<span class="quota-hint">Bấm Quota để tải usage hiện tại.</span></div>';
-  }
+  if (!quota) return '<div class="quota-inline"><span class="quota-hint">Đang tải quota…</span></div>';
   const entries = Object.entries(quota.quotas || {});
-  if (!entries.length) {
-    return '<div class="quota-inline">' + readOnly +
-      '<span class="quota-hint">Upstream không trả về quota window.</span></div>';
-  }
-  return '<div class="quota-inline">' + readOnly +
-    '<span class="quota-plan">' + esc(quota.plan || '—') + '</span>' +
-    entries.map(([name, value]) => '<span class="quota-chip"><b>' + esc(name) + '</b>' +
+  if (!entries.length) return '<div class="quota-inline"><span class="quota-hint">Upstream không trả về quota window.</span></div>';
+  // Two windows split the row evenly so the strip lines up with the table above.
+  return '<div class="quota-inline">' +
+    entries.map(([name, value]) => '<span class="quota-chip"><b>' + esc(name === 'session' ? 'session' : name) + '</b>' +
       '<i>' + Math.round(value.remaining) + '% còn lại</i>' +
       '<span class="progress"><span style="width:' + Math.max(0, Math.min(100, value.remaining)) + '%"></span></span>' +
       '<small>Reset: ' + (value.resetAt ? new Date(value.resetAt).toLocaleString() : '—') + '</small></span>').join('') +
     '</div>';
+}
+
+function sponsorsView() {
+  const groups = state.sponsors.map((sponsor) => {
+    const rows = sponsor.accounts.map((account) => '<tr><td><div class="account-name">' +
+      providerIcon(account.provider) + '<div><strong>' + esc(account.displayName) + '</strong></div></div></td>' +
+      '<td>' + esc(account.provider === 'claude' ? 'Claude Code' : 'Codex') + '</td>' +
+      '<td>' + statusBadge(account.status) + '</td><td>' + statusBadge(account.routers.ninerouter?.status || 'pending') + '</td></tr>').join('');
+    return '<div class="panel sponsor-group"><div class="panel-head"><div><h2>' + esc(sponsor.username) +
+      '</h2></div><span class="sponsor-count">' + sponsor.accounts.length + ' accounts</span></div>' +
+      '<div class="table-wrap"><table><thead><tr><th>Account</th><th>Provider</th><th>State</th><th>9Router</th></tr></thead>' +
+      '<tbody>' + rows + '</tbody></table></div></div>';
+  }).join('');
+  return groups || '<div class="panel empty">No sponsors available.</div>';
 }
 
 function adminView() {
@@ -212,7 +238,9 @@ async function selectTab(tab) {
   state.passwordError = null;
   state.tab = tab;
   if (tab === 'admin') await loadAdmin();
+  if (tab === 'sponsors') await loadSponsors();
   render();
+  if (tab === 'providers') loadQuotas();
 }
 
 function render(extra) {
@@ -229,11 +257,12 @@ function render(extra) {
   }
   $('page-title').textContent = state.view === 'password'
     ? 'Change password'
-    : ({ providers: 'Providers', admin: 'Admin' }[state.tab] || 'Portal');
+    : ({ providers: 'Providers', sponsors: 'Sponsors', admin: 'Admin' }[state.tab] || 'Portal');
   $('session').innerHTML = '<div class="who"><strong>' + esc(state.me.username) + '</strong><span>' + esc(state.me.role) + '</span></div>' +
     '<button id="btn-password-view">Change password</button><button class="ghost" id="btn-logout">Logout</button>';
   const navItems = [
     ['providers', '◈', 'Providers'],
+    ['sponsors', '♧', 'Sponsors'],
     ...(state.me.role === 'admin' ? [['admin', '♙', 'Admin']] : []),
   ];
   $('nav').innerHTML = navItems.map(([tab, icon, label]) => '<button class="nav-item ' + (state.tab === tab ? 'active' : '') +
@@ -244,7 +273,9 @@ function render(extra) {
       ? passwordView()
       : state.tab === 'admin'
         ? adminView()
-        : providersView();
+        : state.tab === 'sponsors'
+          ? sponsorsView()
+          : providersView();
   $('main').innerHTML = banner + content;
   $('modal-root').innerHTML = modalView();
   bind();
@@ -288,9 +319,6 @@ function bind() {
   document.querySelectorAll('[data-remove-account]').forEach((element) => { element.onclick = () => act(element, async () => {
     if (!confirm('Delete account from Portal and 9Router?')) return;
     await api('/api/accounts/' + element.dataset.removeAccount, { method: 'DELETE' }); await refresh();
-  }); });
-  document.querySelectorAll('[data-quota]').forEach((element) => { element.onclick = () => act(element, async () => {
-    state.quotas[element.dataset.quota] = await api('/api/accounts/' + element.dataset.quota + '/quota'); render();
   }); });
   document.querySelectorAll('[data-reset-user]').forEach((element) => { element.onclick = () => {
     state.modal = { type: 'reset-password', id: element.dataset.resetUser, username: element.dataset.username };

@@ -115,16 +115,18 @@ tr:hover td{background:var(--bg-alt)}
 
 /* ---------------------------------------------------------------- quota */
 .quota-row td{padding-top:0;border-top:0;background:var(--bg-alt)}
-.quota-inline{display:flex;flex-wrap:wrap;align-items:center;gap:12px;padding:2px 0 4px}
-.quota-readonly{font-size:10px;text-transform:uppercase;letter-spacing:.7px;font-weight:700;color:var(--muted);border:1px solid var(--border);border-radius:999px;padding:2px 8px}
-.quota-hint,.quota-plan{font-size:12px;color:var(--muted)}
-.quota-chip{display:flex;flex-direction:column;gap:3px;min-width:172px;border:1px solid var(--border-subtle);border-radius:var(--radius);padding:8px 11px;background:var(--surface)}
+.quota-inline{display:grid;grid-template-columns:1fr 1fr;gap:14px;width:100%;padding:0 0 6px;margin-top:18px}
+.quota-hint{font-size:12px;color:var(--muted);grid-column:1/-1}
+.quota-chip{display:flex;flex-direction:column;gap:3px;width:100%;border:1px solid var(--border-subtle);border-radius:var(--radius);padding:10px 13px;background:var(--surface)}
 .quota-chip b{font-size:10px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted)}
 .quota-chip i{font-style:normal;font-size:14px;font-weight:700}
 .quota-chip small{color:var(--muted);font-size:11px}
 .progress{height:6px;border-radius:6px;background:var(--surface-2);overflow:hidden;margin-bottom:8px}
 .progress span{height:100%;display:block;background:linear-gradient(90deg,var(--brand),#f0a58c)}
-.quota-card small{color:var(--muted)}
+
+/* ------------------------------------------------------------- sponsors */
+.sponsor-group .panel-head{align-items:center}
+.sponsor-count{font-size:11px;color:var(--muted);border:1px solid var(--border);border-radius:999px;padding:3px 10px}
 
 /* ---------------------------------------------------------------- modal */
 .modal-overlay{position:fixed;inset:0;z-index:50;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(0,0,0,.5);backdrop-filter:blur(2px)}

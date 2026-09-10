@@ -1,22 +1,43 @@
 const CLAUDE_USAGE_URL = 'https://api.anthropic.com/api/oauth/usage';
 const CODEX_USAGE_URL = 'https://chatgpt.com/backend-api/wham/usage';
 
+/**
+ * Upstreams disagree on the reset representation: Claude sends an ISO string,
+ * Codex sends a Unix timestamp in seconds. Passing the raw number to `Date`
+ * in the browser reads it as milliseconds and renders 1970, so normalize to
+ * ISO here where the provider shape is already known.
+ */
+function resetIso(value) {
+  if (value === null || value === undefined || value === '') return null;
+  if (typeof value === 'number' || /^\d+$/.test(String(value))) {
+    const seconds = Number(value);
+    if (!Number.isFinite(seconds) || seconds <= 0) return null;
+    return new Date(seconds * 1000).toISOString();
+  }
+  const parsed = new Date(value);
+  return Number.isFinite(parsed.getTime()) ? parsed.toISOString() : null;
+}
+
 function quotaWindow(window) {
   if (!window || typeof window.utilization !== 'number') return null;
   return {
     used: window.utilization,
     remaining: Math.max(0, 100 - window.utilization),
-    resetAt: window.resets_at || null,
+    resetAt: resetIso(window.resets_at),
   };
 }
 
 function codexWindow(window) {
   if (!window) return null;
   const used = Number(window.used_percent ?? window.percent_used ?? 0);
+  const resetAt = resetIso(window.reset_at ?? window.resets_at)
+    ?? (Number.isFinite(Number(window.reset_after_seconds))
+      ? new Date(Date.now() + Number(window.reset_after_seconds) * 1000).toISOString()
+      : null);
   return {
     used,
     remaining: Math.max(0, 100 - used),
-    resetAt: window.reset_at ?? window.resets_at ?? null,
+    resetAt,
   };
 }
 

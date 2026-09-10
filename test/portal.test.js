@@ -5,6 +5,7 @@ import { encryptJson } from '../src/lib/crypto.js';
 import { hashPassword } from '../src/services/auth.js';
 import { reconcileAccount } from '../src/services/sync.js';
 import { refreshTokenSet } from '../src/services/refresh.js';
+import { fetchQuota } from '../src/services/quota.js';
 import { parseCallbackInput } from '../src/oauth/client.js';
 import { authHeaders, fakeAdapter, jwt, login, testApp } from './helpers/test-app.js';
 
@@ -95,6 +96,29 @@ test('users only see provider accounts they own, including administrators', asyn
   assert.equal((await app.inject({ method: 'GET', url: '/api/accounts', headers: { cookie: admin.cookie } })).json().length, 0);
 });
 
+test('Sponsors groups account rows by owner without exposing credentials', async (t) => {
+  const { app, db, config } = await testApp();
+  t.after(() => { app.close(); db.close(); });
+  const aliceId = await seedUser(db, 'alice');
+  const bobId = await seedUser(db, 'bob');
+  for (const [ownerId, provider, subject, label] of [
+    [aliceId, 'claude', 'claude-sub', 'alice@example.com'],
+    [aliceId, 'codex', 'codex-sub', 'alice-codex@example.com'],
+    [bobId, 'codex', 'bob-sub', 'bob@example.com'],
+  ]) {
+    const inserted = db.prepare(`INSERT INTO provider_accounts
+      (owner_id, provider, upstream_subject, display_name, credential_envelope)
+      VALUES (?, ?, ?, ?, ?)`).run(ownerId, provider, subject, label, encryptJson({ accessToken: 'secret' }, config.encryptionKey));
+    db.prepare(`INSERT INTO router_connections (account_id, router, sync_status)
+      VALUES (?, 'ninerouter', 'active')`).run(Number(inserted.lastInsertRowid));
+  }
+  const auth = await login(app, 'bob');
+  const response = await app.inject({ method: 'GET', url: '/api/sponsors', headers: { cookie: auth.cookie } });
+  assert.equal(response.statusCode, 200);
+  assert.deepEqual(response.json().map((group) => [group.username, group.accounts.length]), [['alice', 2], ['bob', 1]]);
+  assert.equal(JSON.stringify(response.json()).includes('secret'), false);
+});
+
 test('router sync sends access token metadata but never a refresh token', async () => {
   const calls = [];
   const adapter = new RouterAdapter('ninerouter', { baseUrl: 'http://router.test', syncToken: 'secret' }, async (url, init) => {
@@ -166,6 +190,19 @@ test('refresh preserves a rotated-or-omitted refresh token correctly', async () 
   assert.equal(result.accessToken, 'new');
   assert.equal(result.refreshToken, 'canonical');
   assert.equal(result.idToken, 'identity');
+});
+
+test('Codex quota converts epoch-second reset_at instead of rendering 1970', async () => {
+  const quota = await fetchQuota('codex', { accessToken: 'token' }, async () => new Response(JSON.stringify({
+    plan_type: 'plus',
+    rate_limit: {
+      primary_window: { used_percent: 100, reset_at: 1789064300 },
+      secondary_window: { used_percent: 73, reset_at: 1789539456 },
+    },
+  }), { status: 200 }));
+  assert.equal(quota.quotas.session.resetAt, new Date(1789064300 * 1000).toISOString());
+  assert.equal(quota.quotas.weekly.resetAt, new Date(1789539456 * 1000).toISOString());
+  assert.match(quota.quotas.session.resetAt, /^2026-/);
 });
 
 test('manual OAuth accepts Claude code#state and a Codex callback URL', () => {

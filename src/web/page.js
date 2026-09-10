@@ -12,7 +12,6 @@ export function renderApp() {
 <aside class="sidebar">
   <div class="brand"><div class="brand-mark">9</div><div><strong>LLM Portal</strong><small>Account gateway</small></div></div>
   <nav id="nav"></nav>
-  <div class="sidebar-note"><span class="status-dot"></span>Portal owns credentials</div>
 </aside>
 <div class="workspace">
   <header class="topbar"><div><span class="eyebrow">LLM GATEWAY</span><h1 id="page-title">Providers</h1></div><div id="session"></div></header>
