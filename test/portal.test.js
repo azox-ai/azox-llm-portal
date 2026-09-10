@@ -149,6 +149,39 @@ test('manual OAuth accepts Claude code#state and a Codex callback URL', () => {
   );
 });
 
+test('Claude OAuth mirrors 9Router JSON exchange and keeps state after a rejected code', async (t) => {
+  const exchanges = [];
+  const { app, db } = await testApp({ oauthFetch: {
+    claude: async (_url, options) => {
+      exchanges.push({ headers: options.headers, body: JSON.parse(options.body) });
+      if (exchanges.length === 1) return new Response('{}', { status: 400 });
+      return new Response(JSON.stringify({ access_token: 'access', refresh_token: 'refresh', expires_in: 3600 }), { status: 200 });
+    },
+  } });
+  t.after(() => { app.close(); db.close(); });
+  await seedUser(db, 'alice');
+  const auth = await login(app, 'alice');
+  const started = await app.inject({ method: 'POST', url: '/api/oauth/claude/start', headers: authHeaders(auth) });
+  const state = new URL(started.json().url).searchParams.get('state');
+
+  const rejected = await app.inject({
+    method: 'POST', url: '/api/oauth/claude/complete', headers: authHeaders(auth),
+    payload: { callback: `wrong-code#${state}` },
+  });
+  assert.equal(rejected.statusCode, 400);
+  assert.match(rejected.json().error, /Paste a fresh code/);
+  assert.equal(exchanges[0].headers['content-type'], 'application/json');
+  assert.equal(exchanges[0].body.state, state);
+  assert.equal(exchanges[0].body.code, 'wrong-code');
+
+  const retried = await app.inject({
+    method: 'POST', url: '/api/oauth/claude/complete', headers: authHeaders(auth),
+    payload: { callback: `fresh-code#${state}` },
+  });
+  assert.equal(retried.statusCode, 200);
+  assert.equal(exchanges[1].body.code, 'fresh-code');
+});
+
 test('bodyless POST actions are accepted by the API', async (t) => {
   const { app, db } = await testApp();
   t.after(() => { app.close(); db.close(); });

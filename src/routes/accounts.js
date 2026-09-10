@@ -17,16 +17,21 @@ export default async function accountRoutes(app, { db, config, adapters, oauthFe
       return reply.code(400).send({ error: 'Invalid OAuth callback' });
     }
     const saved = db.prepare(`
-      DELETE FROM oauth_states
+      SELECT verifier
+      FROM oauth_states
       WHERE state_hash = ? AND user_id = ? AND provider = ? AND expires_at > CURRENT_TIMESTAMP
-      RETURNING verifier
     `).get(hashToken(state), request.user.id, provider);
     if (!saved) return reply.code(400).send({ error: 'OAuth state expired or invalid' });
 
     try {
       const providerConfig = config[provider];
       const fetchImpl = oauthFetch[provider] || fetch;
-      const tokenSet = await exchangeCode(providerConfig, { code, verifier: saved.verifier }, fetchImpl);
+      const tokenSet = await exchangeCode(
+        providerConfig,
+        { code, state, verifier: saved.verifier, provider },
+        fetchImpl,
+      );
+      db.prepare('DELETE FROM oauth_states WHERE state_hash = ?').run(hashToken(state));
       const identity = await resolveIdentity(providerConfig, tokenSet, fetchImpl);
       const duplicate = db.prepare('SELECT id, owner_id FROM provider_accounts WHERE provider = ? AND upstream_subject = ?')
         .get(provider, identity.subject);
@@ -63,6 +68,9 @@ export default async function accountRoutes(app, { db, config, adapters, oauthFe
         : reply.send({ ok: true, accountId, routers });
     } catch (exchangeError) {
       request.log.warn({ err: exchangeError, provider }, 'OAuth callback failed');
+      if (!redirect && exchangeError.retryable) {
+        return reply.code(400).send({ error: 'OAuth code rejected. Paste a fresh code from the current OAuth window.' });
+      }
       return redirect
         ? reply.redirect('/?oauth=failed')
         : reply.code(502).send({ error: 'OAuth exchange failed' });

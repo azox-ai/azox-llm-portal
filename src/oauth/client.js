@@ -55,22 +55,32 @@ export function parseCallbackInput(input) {
  * supplied for Codex — native fetch reliably draws a Cloudflare managed
  * challenge on chatgpt.com, which upstream classifiers turn into a permanent ban.
  */
-export async function exchangeCode(providerConfig, { code, verifier }, fetchImpl = fetch) {
-  const body = new URLSearchParams({
+export async function exchangeCode(providerConfig, { code, verifier, state, provider }, fetchImpl = fetch) {
+  const values = {
     grant_type: 'authorization_code',
     code,
     client_id: providerConfig.clientId,
     redirect_uri: providerConfig.redirectUri,
     code_verifier: verifier,
-  });
+  };
+  // Anthropic's token endpoint takes a JSON body and requires the `state` it
+  // rendered next to the code; sending form-urlencoded without it returns 400.
+  // Codex keeps the standard form encoding. This mirrors the 9Router baseline.
+  const json = provider === 'claude';
+  if (json) values.state = state ?? '';
   const response = await fetchImpl(providerConfig.tokenUrl, {
     method: 'POST',
-    headers: { 'content-type': 'application/x-www-form-urlencoded', accept: 'application/json' },
-    body,
+    headers: json
+      ? { 'content-type': 'application/json', accept: 'application/json' }
+      : { 'content-type': 'application/x-www-form-urlencoded', accept: 'application/json' },
+    body: json ? JSON.stringify(values) : new URLSearchParams(values),
   });
   if (!response.ok) {
     const error = new Error('Token exchange failed');
     error.statusCode = response.status;
+    // 4xx means the pasted code is wrong, expired, or already consumed; the
+    // operator can fix that by pasting again, so the caller keeps the state.
+    error.retryable = response.status >= 400 && response.status < 500;
     throw error;
   }
   return normalizeTokenSet(await response.json());
