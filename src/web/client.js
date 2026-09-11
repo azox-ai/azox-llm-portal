@@ -8,7 +8,7 @@ const state = {
   quotas: {},
   sponsors: [],
   users: [],
-  audit: { items: [], page: 1, pageSize: 25, total: 0, totalPages: 1 },
+  audit: { items: [], page: 1, pageSize: 20, total: 0, totalPages: 1 },
   settings: null,
   modal: null,
   view: null,
@@ -102,7 +102,7 @@ async function loadAdmin() {
 }
 
 async function loadAudit(page = 1) {
-  state.audit = await api('/api/admin/audit?page=' + page + '&pageSize=25');
+  state.audit = await api('/api/admin/audit?page=' + page + '&pageSize=20');
 }
 
 function loginView() {

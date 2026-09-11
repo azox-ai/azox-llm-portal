@@ -13,6 +13,36 @@ function requireAdmin(request, reply) {
   return true;
 }
 
+const ACTION_LABELS = {
+  'account.added': 'account added',
+  'account.reauthenticated': 'account re-authenticated',
+  'account.enabled': 'account enabled',
+  'account.disabled': 'account disabled',
+  'account.removed': 'account removed',
+  'account.remove_failed': 'account removal failed',
+  'admin.create_user': 'user created',
+  'admin.reset_password': 'password reset',
+  'admin.remove_user': 'user removed',
+  'admin.remove_user_failed': 'user removal failed',
+  'admin.update_user': 'user updated',
+  'user.login': 'user login',
+  'user.login_failed': 'user login failed',
+  'admin.login': 'admin login',
+  'admin.login_failed': 'admin login failed',
+  'user.registered': 'user registered',
+  'user.password_changed': 'password changed',
+};
+
+function auditTarget(entry) {
+  if (entry.resolved_target) return entry.resolved_target;
+  const targetId = entry.target_id || '-';
+  if (/^\d+$/.test(targetId)) {
+    const action = ACTION_LABELS[entry.action] || entry.action.replace(/[._]/g, ' ');
+    return `${targetId} (${action})`;
+  }
+  return targetId;
+}
+
 export default async function adminRoutes(app, { db, adapters, config }) {
   app.get('/api/admin/settings', async (request, reply) => {
     if (!requireAdmin(request, reply)) return reply;
@@ -165,17 +195,16 @@ export default async function adminRoutes(app, { db, adapters, config }) {
   app.get('/api/admin/audit', async (request, reply) => {
     if (!requireAdmin(request, reply)) return reply;
     const page = Math.max(1, Number.parseInt(request.query.page, 10) || 1);
-    const pageSize = Math.min(100, Math.max(10, Number.parseInt(request.query.pageSize, 10) || 25));
+    const pageSize = Math.min(100, Math.max(10, Number.parseInt(request.query.pageSize, 10) || 20));
     const total = db.prepare('SELECT COUNT(*) AS total FROM audit_log').get().total;
     const items = db.prepare(`
       SELECT l.id, l.action, l.target_type, l.target_id, l.detail, l.created_at,
         actor.username AS actor,
         CASE
-          WHEN l.target_type = 'user' THEN COALESCE(target_user.username, NULLIF(l.detail, ''), l.target_id, '-')
-          WHEN l.target_type = 'account' THEN COALESCE(target_account.display_name, 'Account #' || l.target_id)
-          WHEN l.target_id IS NOT NULL THEN l.target_id
-          ELSE '-'
-        END AS target
+          WHEN l.target_type = 'user' THEN target_user.username
+          WHEN l.target_type = 'account' THEN target_account.display_name
+          ELSE NULL
+        END AS resolved_target
       FROM audit_log l
       LEFT JOIN users actor ON actor.id = l.actor_id
       LEFT JOIN users target_user
@@ -188,7 +217,7 @@ export default async function adminRoutes(app, { db, adapters, config }) {
       time: entry.created_at,
       actor: entry.actor || 'system',
       action: entry.action,
-      target: entry.target,
+      target: auditTarget(entry),
       detail: entry.detail,
     }));
     return {

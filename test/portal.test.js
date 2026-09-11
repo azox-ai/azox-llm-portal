@@ -110,20 +110,26 @@ test('admin changes roles and audit pagination resolves user targets', async (t)
     addAudit.run(admin.response.json().id, `test.action_${index}`, String(aliceId));
   }
 
-  const first = await app.inject({ method: 'GET', url: '/api/admin/audit?page=1&pageSize=25', headers: { cookie: admin.cookie } });
+  const first = await app.inject({ method: 'GET', url: '/api/admin/audit?page=1&pageSize=20', headers: { cookie: admin.cookie } });
   assert.equal(first.statusCode, 200);
-  assert.equal(first.json().items.length, 25);
+  assert.equal(first.json().items.length, 20);
   assert.equal(first.json().page, 1);
   assert.equal(first.json().total, 27);
   assert.equal(first.json().totalPages, 2);
   assert.equal(first.json().items[0].target, 'alice');
   assert.equal(first.json().items[0].target.includes('user:'), false);
 
-  const second = await app.inject({ method: 'GET', url: '/api/admin/audit?page=2&pageSize=25', headers: { cookie: admin.cookie } });
+  const second = await app.inject({ method: 'GET', url: '/api/admin/audit?page=2&pageSize=20', headers: { cookie: admin.cookie } });
   assert.equal(second.statusCode, 200);
-  assert.equal(second.json().items.length, 2);
+  assert.equal(second.json().items.length, 7);
   assert.equal(second.json().page, 2);
   assert.equal(second.json().items[0].target, 'alice');
+
+  db.prepare('DELETE FROM users WHERE id = ?').run(aliceId);
+  db.prepare(`INSERT INTO audit_log (actor_id, action, target_type, target_id)
+    VALUES (?, 'admin.update_user', 'user', '10')`).run(admin.response.json().id);
+  const annotated = await app.inject({ method: 'GET', url: '/api/admin/audit?page=1&pageSize=20', headers: { cookie: admin.cookie } });
+  assert.equal(annotated.json().items[0].target, '10 (user updated)');
 });
 
 test('admin login uses INIT_ADMIN_PASSWORD independently of the database password', async (t) => {

@@ -48,7 +48,7 @@ test('client bundle parses and merges quota into the providers surface', () => {
   assert.match(appScript, /function auditView/);
   assert.match(appScript, /audit-prev/);
   assert.match(appScript, /audit-next/);
-  assert.match(appScript, /pageSize=25/);
+  assert.match(appScript, /pageSize=20/);
   assert.match(appScript, /btn-password-cancel/);
   assert.doesNotMatch(appScript, /Không bắt buộc đổi password lần đầu/);
   assert.doesNotMatch(appScript, /window\.prompt/);
