@@ -57,6 +57,7 @@ test('served assets contain the 9Router-inspired portal shell', () => {
   // Sponsor tables share one fixed column grid so groups line up.
   assert.match(styles, /\.sponsor-group table\{table-layout:fixed/);
   assert.match(styles, /\.login-form\{margin-top:16px\}/);
+  assert.match(styles, /\.auth-card\{width:min\(480px,100%\)/);
   assert.match(styles, /\.login-actions\{display:grid/);
   for (const status of ['active', 'disabled', 'failed', 'needs_reauth', 'pending']) {
     assert.match(styles, new RegExp('\\.badge\\.' + status + '\\b'));

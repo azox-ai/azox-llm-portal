@@ -159,7 +159,7 @@ tr:hover td{background:var(--bg-alt)}
 
 /* ---------------------------------------------------------------- auth */
 .auth-shell{min-height:calc(100vh - 66px);display:grid;place-items:center}
-.auth-card{width:min(380px,100%);background:var(--surface);padding:32px;border:1px solid var(--border-subtle);border-radius:var(--radius-lg);box-shadow:var(--shadow-elev)}
+.auth-card{width:min(480px,100%);background:var(--surface);padding:32px;border:1px solid var(--border-subtle);border-radius:var(--radius-lg);box-shadow:var(--shadow-elev)}
 .auth-card .brand-mark{margin-bottom:14px}
 .auth-card h2{font-size:23px;margin:4px 0}
 .auth-card p{color:var(--muted);margin:0 0 22px;font-size:13px}
