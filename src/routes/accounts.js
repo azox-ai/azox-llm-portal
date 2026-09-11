@@ -10,6 +10,7 @@ import {
 } from '../services/sync.js';
 import { fetchQuota } from '../services/quota.js';
 import { refreshAccount } from '../services/refresh.js';
+import { getRefreshLeadMs } from '../services/settings.js';
 
 export default async function accountRoutes(app, { db, config, adapters, oauthFetch = {} }) {
   async function completeOauth(request, reply, provider, code, state, redirect) {
@@ -193,7 +194,7 @@ export default async function accountRoutes(app, { db, config, adapters, oauthFe
     if (account.owner_id !== request.user.id) return reply.code(404).send({ error: 'Account not found' });
     try {
       const expiresAt = Date.parse(account.access_expires_at || '');
-      if (Number.isFinite(expiresAt) && expiresAt <= Date.now() + config.refreshLeadMinutes * 60_000) {
+      if (Number.isFinite(expiresAt) && expiresAt <= Date.now() + getRefreshLeadMs(db, config)) {
         await refreshAccount(db, adapters, config, account.id, oauthFetch[account.provider] || fetch);
       }
       const current = db.prepare('SELECT * FROM provider_accounts WHERE id = ?').get(account.id);

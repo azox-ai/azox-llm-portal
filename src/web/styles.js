@@ -59,7 +59,7 @@ h1{font-size:19px;margin:2px 0 0}
 #session .who{display:flex;flex-direction:column;line-height:1.25;text-align:right;padding:4px 0}
 #session .who strong{color:var(--text)}
 #session .who span{font-size:10px;text-transform:uppercase;letter-spacing:.8px;color:var(--subtle)}
-main{max-width:1180px;margin:0 auto;padding:30px 26px 34px}
+main{max-width:1440px;margin:0 auto;padding:30px 26px 34px}
 
 /* ---------------------------------------------------------------- panels */
 .panel{background:var(--surface);border:1px solid var(--border-subtle);border-radius:var(--radius-lg);box-shadow:var(--shadow-soft);margin-bottom:18px;overflow:hidden}
@@ -72,7 +72,7 @@ main{max-width:1180px;margin:0 auto;padding:30px 26px 34px}
 .panel-head h2{font-size:15px;margin:0}
 .panel-head p{margin:3px 0 0;color:var(--muted);font-size:12px}
 .toolbar,.actions{display:flex;gap:7px;flex-wrap:wrap}
-.grid-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px;padding:18px}
+.grid-cards{display:grid;grid-template-columns:repeat(2,minmax(280px,1fr));gap:14px;padding:18px}
 .provider-card{border:1px solid var(--border-subtle);border-radius:var(--radius);padding:16px;background:var(--bg-alt)}
 .provider-card-top{display:flex;gap:11px;align-items:center;margin-bottom:14px}
 .provider-card h3{margin:0;font-size:14px}.provider-card p{margin:2px 0 0;color:var(--muted);font-size:12px}
@@ -182,6 +182,10 @@ tr:hover td{background:var(--bg-alt)}
 .row-sub{display:block;color:var(--muted);font-size:10px;margin-top:2px}
 .create-user{display:grid;grid-template-columns:1fr 1.4fr 120px auto;gap:10px;padding:16px 20px;align-items:end}
 .create-user label{margin-bottom:0}
+.settings-form{display:grid;grid-template-columns:minmax(220px,360px) auto;gap:10px;padding:16px 20px;align-items:end}
+.settings-form label{margin-bottom:0}
+.settings-form button{height:40px}
+.connections-table th,.connections-table td{white-space:nowrap}
 
 @media(max-width:860px){
   .sidebar{width:66px;padding:18px 8px}
@@ -193,6 +197,7 @@ tr:hover td{background:var(--bg-alt)}
   .topbar{padding:0 14px}
   main{padding:14px}
   .create-user{grid-template-columns:1fr}
+  .settings-form,.grid-cards{grid-template-columns:1fr}
   .actions{min-width:240px}
 }
 `;

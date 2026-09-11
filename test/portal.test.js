@@ -4,7 +4,7 @@ import { RouterAdapter } from '../src/adapters/router-adapter.js';
 import { encryptJson } from '../src/lib/crypto.js';
 import { hashPassword } from '../src/services/auth.js';
 import { reconcileAccount } from '../src/services/sync.js';
-import { refreshTokenSet } from '../src/services/refresh.js';
+import { refreshTokenSet, runRefreshTick } from '../src/services/refresh.js';
 import { fetchQuota } from '../src/services/quota.js';
 import { parseCallbackInput } from '../src/oauth/client.js';
 import { authHeaders, fakeAdapter, jwt, login, testApp } from './helpers/test-app.js';
@@ -59,6 +59,33 @@ test('an admin creates users without forcing a password change', async (t) => {
   const alice = await login(app, 'alice');
   assert.equal(alice.response.statusCode, 200);
   assert.equal(alice.response.json().mustChangePassword, undefined);
+});
+
+test('admin reads and updates the token refresh lead time in hours', async (t) => {
+  const { app, db } = await testApp({ config: { refreshLeadMinutes: 480 } });
+  t.after(() => { app.close(); db.close(); });
+  const admin = await session(app, db, 'admin', 'admin');
+
+  const initial = await app.inject({ method: 'GET', url: '/api/admin/settings', headers: { cookie: admin.cookie } });
+  assert.equal(initial.statusCode, 200);
+  assert.equal(initial.json().refreshLeadHours, 8);
+
+  const changed = await app.inject({
+    method: 'PATCH', url: '/api/admin/settings', headers: authHeaders(admin),
+    payload: { refreshLeadHours: 12 },
+  });
+  assert.equal(changed.statusCode, 200);
+  assert.equal(changed.json().refreshLeadHours, 12);
+  assert.equal(db.prepare("SELECT value FROM app_settings WHERE key = 'refresh_lead_hours'").get().value, '12');
+
+  for (const invalid of [0, 1.5, 169, 'eight']) {
+    const rejected = await app.inject({
+      method: 'PATCH', url: '/api/admin/settings', headers: authHeaders(admin),
+      payload: { refreshLeadHours: invalid },
+    });
+    assert.equal(rejected.statusCode, 400);
+  }
+  assert.equal(db.prepare("SELECT value FROM app_settings WHERE key = 'refresh_lead_hours'").get().value, '12');
 });
 
 test('admin login uses INIT_ADMIN_PASSWORD independently of the database password', async (t) => {
@@ -217,6 +244,49 @@ test('refresh preserves a rotated-or-omitted refresh token correctly', async () 
   assert.equal(result.accessToken, 'new');
   assert.equal(result.refreshToken, 'canonical');
   assert.equal(result.idToken, 'identity');
+});
+
+test('refresh tick honors the configured lead boundary and live admin setting', async (t) => {
+  const now = Date.parse('2030-01-01T00:00:00.000Z');
+  const refreshCalls = [];
+  const { app, db, config, adapters } = await testApp({ config: { refreshLeadMinutes: 480 } });
+  t.after(() => { app.close(); db.close(); });
+  const ownerId = await seedUser(db, 'refresh-owner');
+
+  const insert = (subject, hours, extraMilliseconds = 0) => Number(db.prepare(`
+    INSERT INTO provider_accounts
+      (owner_id, provider, upstream_subject, display_name, credential_envelope, access_expires_at)
+    VALUES (?, 'codex', ?, ?, ?, ?)
+  `).run(
+    ownerId,
+    subject,
+    subject,
+    encryptJson({ accessToken: `old-${subject}`, refreshToken: `refresh-${subject}` }, config.encryptionKey),
+    new Date(now + hours * 60 * 60_000 + extraMilliseconds).toISOString(),
+  ).lastInsertRowid);
+
+  const atEightHours = insert('at-eight-hours', 8);
+  const afterEightHours = insert('after-eight-hours', 8, 1);
+  const atTenHours = insert('at-ten-hours', 10);
+  const refreshFetch = async (_url, options) => {
+    const refreshToken = new URLSearchParams(options.body).get('refresh_token');
+    refreshCalls.push(refreshToken);
+    return new Response(JSON.stringify({ access_token: `new-${refreshToken}`, expires_in: 3600 }), { status: 200 });
+  };
+
+  assert.equal(await runRefreshTick(db, adapters, config, refreshFetch, now), 1);
+  assert.deepEqual(refreshCalls, ['refresh-at-eight-hours']);
+  assert.equal(db.prepare('SELECT token_version FROM provider_accounts WHERE id = ?').get(atEightHours).token_version, 2);
+  assert.equal(db.prepare('SELECT token_version FROM provider_accounts WHERE id = ?').get(afterEightHours).token_version, 1);
+  assert.equal(db.prepare('SELECT token_version FROM provider_accounts WHERE id = ?').get(atTenHours).token_version, 1);
+
+  db.prepare("INSERT INTO app_settings (key, value) VALUES ('refresh_lead_hours', '12')").run();
+  assert.equal(await runRefreshTick(db, adapters, config, refreshFetch, now), 3);
+  assert.deepEqual(refreshCalls.slice(1).sort(), [
+    'refresh-after-eight-hours', 'refresh-at-eight-hours', 'refresh-at-ten-hours',
+  ]);
+  assert.equal(db.prepare('SELECT token_version FROM provider_accounts WHERE id = ?').get(afterEightHours).token_version, 2);
+  assert.equal(db.prepare('SELECT token_version FROM provider_accounts WHERE id = ?').get(atTenHours).token_version, 2);
 });
 
 test('Codex quota converts epoch-second reset_at instead of rendering 1970', async () => {

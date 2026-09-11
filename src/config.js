@@ -36,10 +36,10 @@ export function loadConfig(overrides = {}) {
     secureCookies: tls,
     sessionHours: integer('SESSION_HOURS', 24),
     oauthStateMinutes: integer('OAUTH_STATE_MINUTES', 10),
-    // The portal refreshes this far ahead of expiry and pushes the result to
-    // every router. One hour is comfortably longer than a router restart or a
-    // transient sync failure, so a router never has to refresh on its own.
-    refreshLeadMinutes: integer('REFRESH_LEAD_MINUTES', 60),
+    // Database-backed admin settings override this startup default. Eight hours
+    // provides several retry windows before expiry while the scheduler still
+    // checks every five minutes.
+    refreshLeadMinutes: integer('REFRESH_LEAD_MINUTES', 480),
     refreshIntervalMinutes: integer('REFRESH_INTERVAL_MINUTES', 5),
     initialAdminUsername: process.env.INIT_ADMIN_USERNAME || 'admin',
     initialAdminPassword: process.env.INIT_ADMIN_PASSWORD || '',

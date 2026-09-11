@@ -9,6 +9,7 @@ const state = {
   sponsors: [],
   users: [],
   audit: [],
+  settings: null,
   modal: null,
   view: null,
   passwordError: null,
@@ -94,7 +95,11 @@ async function loadSponsors() {
 }
 
 async function loadAdmin() {
-  [state.users, state.audit] = await Promise.all([api('/api/admin/users'), api('/api/admin/audit?limit=40')]);
+  [state.users, state.audit, state.settings] = await Promise.all([
+    api('/api/admin/users'),
+    api('/api/admin/audit?limit=40'),
+    api('/api/admin/settings'),
+  ]);
 }
 
 function loginView() {
@@ -154,7 +159,7 @@ function providersView() {
     '<div class="grid-cards">' + providerCard('claude', 'Claude Code', 'Anthropic OAuth account') +
     providerCard('codex', 'Codex', 'OpenAI ChatGPT OAuth account') + '</div></div>' +
     '<div class="panel"><div class="panel-head"><div><h2>Connections</h2></div></div>' +
-    (rows ? '<div class="table-wrap"><table><thead><tr><th>Account</th><th>Provider</th><th>State</th>' +
+    (rows ? '<div class="table-wrap"><table class="connections-table"><thead><tr><th>Account</th><th>Provider</th><th>State</th>' +
       '<th>9Router</th><th>OmniRoute</th><th>Access token expires</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div>' :
       '<div class="empty">No provider connections yet.</div>') + '</div>';
 }
@@ -200,7 +205,13 @@ function adminView() {
     '</td></tr>').join('');
   const auditRows = state.audit.map((entry) => '<tr><td>' + esc(entry.created_at) + '</td><td>' + esc(entry.actor || 'system') +
     '</td><td>' + esc(entry.action) + '</td><td>' + esc(entry.target_type) + ':' + esc(entry.target_id || '-') + '</td></tr>').join('');
-  return '<div class="panel"><div class="panel-head"><div><h2>User management</h2><p>Create, reset password, disable, or remove users.</p></div></div>' +
+  const refreshLeadHours = state.settings?.refreshLeadHours ?? 8;
+  return '<div class="panel"><div class="panel-head"><div><h2>Token refresh</h2>' +
+    '<p>Refresh provider tokens this many hours before expiry. Changes apply to the next scheduler run.</p></div></div>' +
+    '<form class="settings-form" id="refresh-settings-form"><label>Before expiry (hours)' +
+    '<input id="refresh-lead-hours" type="number" min="1" max="168" step="1" value="' + esc(refreshLeadHours) + '"></label>' +
+    '<button class="primary" type="submit">Save</button></form></div>' +
+    '<div class="panel"><div class="panel-head"><div><h2>User management</h2><p>Create, reset password, disable, or remove users.</p></div></div>' +
     '<form class="create-user" id="create-user-form"><label>Username<input id="new-user" placeholder="username" autocomplete="off"></label>' +
     '<label>Initial password<input id="new-pass" type="password" placeholder="Minimum 12 characters" autocomplete="new-password"></label>' +
     '<label>Role<select id="new-role"><option value="user">user</option><option value="admin">admin</option></select></label>' +
@@ -363,6 +374,7 @@ function bind() {
     await loadAdmin(); render();
   }); });
   if ($('create-user-form')) $('create-user-form').onsubmit = (event) => { event.preventDefault(); createUser(); };
+  if ($('refresh-settings-form')) $('refresh-settings-form').onsubmit = (event) => { event.preventDefault(); updateRefreshSettings(); };
   if ($('traffic-close')) $('traffic-close').onclick = closeModal;
   if ($('close-modal')) $('close-modal').onclick = closeModal;
   if ($('open-oauth')) $('open-oauth').onclick = () => window.open(state.modal.url, 'portal_oauth', 'width=680,height=760');
@@ -492,6 +504,18 @@ async function createUser() {
     }) });
     state.message = { text: 'User created.', kind: 'ok' };
     await loadAdmin(); render();
+  });
+}
+
+async function updateRefreshSettings() {
+  const button = $('refresh-settings-form').querySelector('button[type=submit]');
+  await act(button, async () => {
+    state.settings = await api('/api/admin/settings', {
+      method: 'PATCH',
+      body: JSON.stringify({ refreshLeadHours: Number($('refresh-lead-hours').value) }),
+    });
+    state.message = { text: 'Token refresh lead time updated.', kind: 'ok' };
+    render();
   });
 }
 

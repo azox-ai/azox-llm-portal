@@ -39,6 +39,9 @@ test('client bundle parses and merges quota into the providers surface', () => {
   assert.match(appScript, /sponsor-account-col/);
   assert.match(appScript, /Reset password/);
   assert.match(appScript, /Remove user/);
+  assert.match(appScript, /Before expiry \(hours\)/);
+  assert.match(appScript, /refresh-settings-form/);
+  assert.match(appScript, /updateRefreshSettings/);
   assert.match(appScript, /btn-password-cancel/);
   assert.doesNotMatch(appScript, /Không bắt buộc đổi password lần đầu/);
   assert.doesNotMatch(appScript, /window\.prompt/);
@@ -75,6 +78,8 @@ test('served assets contain the 9Router-inspired portal shell', () => {
   assert.match(styles, /\.sponsor-group table\{table-layout:fixed/);
   assert.match(styles, /\.login-form\{margin-top:16px\}/);
   assert.match(styles, /\.auth-card\{width:min\(480px,100%\)/);
+  assert.match(styles, /main\{max-width:1440px/);
+  assert.match(styles, /\.connections-table th,\.connections-table td\{white-space:nowrap\}/);
   // Theme toggle: explicit choice beats the OS preference.
   assert.match(styles, /:root\[data-theme="dark"\]/);
   assert.match(styles, /:root:not\(\[data-theme="light"\]\)/);

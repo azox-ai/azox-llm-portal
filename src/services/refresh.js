@@ -1,6 +1,7 @@
 import { decryptJson, encryptJson } from '../lib/crypto.js';
 import { normalizeTokenSet } from '../oauth/client.js';
 import { reconcileAccount } from './sync.js';
+import { getRefreshLeadMs } from './settings.js';
 
 function refreshRequest(provider, providerConfig, refreshToken) {
   const values = {
@@ -65,8 +66,9 @@ export async function refreshAccount(db, adapters, config, accountId, fetchImpl 
   }
 }
 
-export async function runRefreshTick(db, adapters, config, fetchImpl = fetch) {
-  const cutoff = new Date(Date.now() + config.refreshLeadMinutes * 60_000).toISOString();
+export async function runRefreshTick(db, adapters, config, fetchImpl = fetch, now = Date.now()) {
+  // Read the setting on every tick so admin changes apply without a restart.
+  const cutoff = new Date(now + getRefreshLeadMs(db, config)).toISOString();
   const accounts = db.prepare(`
     SELECT id FROM provider_accounts
     WHERE credential_status = 'active'

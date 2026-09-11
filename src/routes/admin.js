@@ -3,6 +3,9 @@ import { hashPassword, destroyUserSessions } from '../services/auth.js';
 import { validUsername, validPassword } from '../lib/validation.js';
 import { audit } from '../services/audit.js';
 import { removeAccount } from '../services/sync.js';
+import {
+  getRefreshLeadHours, setRefreshLeadHours, MIN_REFRESH_LEAD_HOURS, MAX_REFRESH_LEAD_HOURS,
+} from '../services/settings.js';
 
 function requireAdmin(request, reply) {
   if (!request.user) { reply.code(401).send({ error: 'Not authenticated' }); return false; }
@@ -10,7 +13,28 @@ function requireAdmin(request, reply) {
   return true;
 }
 
-export default async function adminRoutes(app, { db, adapters }) {
+export default async function adminRoutes(app, { db, adapters, config }) {
+  app.get('/api/admin/settings', async (request, reply) => {
+    if (!requireAdmin(request, reply)) return reply;
+    return { refreshLeadHours: getRefreshLeadHours(db, config) };
+  });
+
+  app.patch('/api/admin/settings', async (request, reply) => {
+    if (!requireAdmin(request, reply)) return reply;
+    const refreshLeadHours = Number(request.body?.refreshLeadHours);
+    if (!Number.isInteger(refreshLeadHours)
+      || refreshLeadHours < MIN_REFRESH_LEAD_HOURS
+      || refreshLeadHours > MAX_REFRESH_LEAD_HOURS) {
+      return reply.code(400).send({ error: `Refresh lead time must be ${MIN_REFRESH_LEAD_HOURS}-${MAX_REFRESH_LEAD_HOURS} hours` });
+    }
+    setRefreshLeadHours(db, refreshLeadHours);
+    audit(db, {
+      actorId: request.user.id, action: 'admin.update_settings', targetType: 'setting',
+      targetId: 'refresh_lead_hours', detail: String(refreshLeadHours), ip: request.ip,
+    });
+    return { refreshLeadHours };
+  });
+
   app.get('/api/admin/users', async (request, reply) => {
     if (!requireAdmin(request, reply)) return reply;
     return db.prepare(`
