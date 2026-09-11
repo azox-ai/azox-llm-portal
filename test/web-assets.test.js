@@ -4,6 +4,7 @@ import vm from 'node:vm';
 import { appScript } from '../src/web/client.js';
 import { styles } from '../src/web/styles.js';
 import { renderApp } from '../src/web/page.js';
+import { assets, IMMUTABLE_CACHE_CONTROL, NO_STORE_CACHE_CONTROL } from '../src/web/assets.js';
 import { testApp } from './helpers/test-app.js';
 
 test('client bundle parses and merges quota into the providers surface', () => {
@@ -87,6 +88,34 @@ test('served assets contain the 9Router-inspired portal shell', () => {
   assert.match(styles, /\.login-actions\{display:grid/);
   for (const status of ['active', 'disabled', 'failed', 'needs_reauth', 'pending']) {
     assert.match(styles, new RegExp('\\.badge\\.' + status + '\\b'));
+  }
+});
+
+test('fingerprinted assets prevent stale deploys and expose a tab icon', async (t) => {
+  const html = renderApp();
+  assert.match(assets.script.path, /^\/assets\/app-[a-f0-9]{16}\.js$/);
+  assert.match(assets.styles.path, /^\/assets\/styles-[a-f0-9]{16}\.css$/);
+  assert.match(assets.favicon.path, /^\/assets\/icon-[a-f0-9]{16}\.svg$/);
+  assert.match(html, new RegExp(assets.script.path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  assert.match(html, new RegExp(assets.styles.path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  assert.match(html, new RegExp(assets.favicon.path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  assert.match(assets.favicon.body, /<svg/);
+  assert.match(assets.favicon.body, />9<\/text>/);
+
+  const { app, db } = await testApp();
+  t.after(() => { app.close(); db.close(); });
+  const shell = await app.inject({ method: 'GET', url: '/' });
+  assert.equal(shell.headers['cache-control'], NO_STORE_CACHE_CONTROL);
+  for (const asset of Object.values(assets)) {
+    const response = await app.inject({ method: 'GET', url: asset.path });
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.headers['cache-control'], IMMUTABLE_CACHE_CONTROL);
+    assert.equal(response.body, asset.body);
+  }
+  for (const path of ['/app.js', '/styles.css', '/favicon.ico']) {
+    const response = await app.inject({ method: 'GET', url: path });
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.headers['cache-control'], NO_STORE_CACHE_CONTROL);
   }
 });
 

@@ -1,3 +1,5 @@
+import { assets } from './assets.js';
+
 export function renderApp() {
   return `<!doctype html>
 <html lang="en">
@@ -6,7 +8,8 @@ export function renderApp() {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
 <title>AZOX LLM Portal</title>
-<link rel="stylesheet" href="/styles.css">
+<link rel="icon" type="image/svg+xml" href="${assets.favicon.path}">
+<link rel="stylesheet" href="${assets.styles.path}">
 <script>
   // Apply the saved theme before first paint so the shell never flashes.
   (function () {
@@ -27,7 +30,7 @@ export function renderApp() {
   <main id="main"></main>
 </div>
 <div id="modal-root"></div>
-<script type="module" src="/app.js"></script>
+<script type="module" src="${assets.script.path}"></script>
 </body>
 </html>`;
 }

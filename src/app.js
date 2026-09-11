@@ -11,8 +11,9 @@ import authRoutes from './routes/auth.js';
 import accountRoutes from './routes/accounts.js';
 import adminRoutes from './routes/admin.js';
 import { renderApp } from './web/page.js';
-import { appScript } from './web/client.js';
-import { styles } from './web/styles.js';
+import {
+  assets, IMMUTABLE_CACHE_CONTROL, NO_STORE_CACHE_CONTROL,
+} from './web/assets.js';
 import { startRefreshScheduler } from './services/refresh.js';
 import { restoreFullAccountLabels } from './services/sync.js';
 
@@ -96,9 +97,32 @@ export async function buildApp(options = {}) {
     ? () => {}
     : startRefreshScheduler(db, adapters, config, options.refreshFetch);
 
-  app.get('/', async (_request, reply) => reply.type('text/html').send(renderApp()));
-  app.get('/app.js', async (_request, reply) => reply.type('application/javascript').send(appScript));
-  app.get('/styles.css', async (_request, reply) => reply.type('text/css').send(styles));
+  // The shell must never be cached: it is the only document that knows which
+  // fingerprinted asset URLs the current build uses.
+  app.get('/', async (_request, reply) => reply
+    .header('cache-control', NO_STORE_CACHE_CONTROL)
+    .type('text/html')
+    .send(renderApp()));
+
+  for (const asset of Object.values(assets)) {
+    app.get(asset.path, async (_request, reply) => reply
+      .header('cache-control', IMMUTABLE_CACHE_CONTROL)
+      .type(asset.type)
+      .send(asset.body));
+  }
+
+  // Chrome still requests /favicon.ico directly, and the unfingerprinted asset
+  // paths remain reachable for anything holding an old link. Both revalidate.
+  app.get('/favicon.ico', async (_request, reply) => reply
+    .header('cache-control', NO_STORE_CACHE_CONTROL)
+    .type(assets.favicon.type)
+    .send(assets.favicon.body));
+  for (const [legacy, asset] of [['/app.js', assets.script], ['/styles.css', assets.styles]]) {
+    app.get(legacy, async (_request, reply) => reply
+      .header('cache-control', NO_STORE_CACHE_CONTROL)
+      .type(asset.type)
+      .send(asset.body));
+  }
 
   app.addHook('onClose', async () => {
     stopRefreshScheduler();
