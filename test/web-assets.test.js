@@ -27,9 +27,10 @@ test('client bundle parses and merges quota into the providers surface', () => {
   assert.match(appScript, /Sponsored by: /);
   assert.match(appScript, /Step 1: Open OAuth URL|Open OAuth URL in browser/);
   assert.match(appScript, /Paste full Codex callback URL/);
-  // The login card shows short User/Admin tabs plus the New sign-up button.
-  assert.match(appScript, />User</);
-  assert.match(appScript, />Admin</);
+  // Login uses one form for users and admins, with errors inside the card.
+  assert.doesNotMatch(appScript, /login-user-tab|login-admin-tab|login-tabs/);
+  assert.match(appScript, /loginError/);
+  assert.match(appScript, /login-error/);
   assert.match(appScript, /login-new/);
   assert.match(appScript, /registerUser/);
   assert.doesNotMatch(appScript, /Admin login|User login/);
@@ -55,6 +56,7 @@ test('served assets contain the 9Router-inspired portal shell', () => {
   assert.match(styles, /\.quota-inline\{display:grid;grid-template-columns:1fr 1fr[^}]*margin-top:18px\}/);
   // Sponsor tables share one fixed column grid so groups line up.
   assert.match(styles, /\.sponsor-group table\{table-layout:fixed/);
+  assert.match(styles, /\.login-form\{margin-top:16px\}/);
   assert.match(styles, /\.login-actions\{display:grid/);
   for (const status of ['active', 'disabled', 'failed', 'needs_reauth', 'pending']) {
     assert.match(styles, new RegExp('\\.badge\\.' + status + '\\b'));

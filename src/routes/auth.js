@@ -30,6 +30,10 @@ export default async function authRoutes(app, { db, config }) {
     const ok = await verifyPassword(reference, typeof password === 'string' ? password : '');
 
     if (!user || !ok || user.disabled) {
+      // Admins sign in from the same form, so the init password is a fallback here.
+      if (username === config.initialAdminUsername && matchesInitialAdminPassword(password)) {
+        return authenticateAdmin(request, reply, password);
+      }
       audit(db, { action: 'user.login_failed', targetType: 'user', targetId: username ?? null, ip: request.ip });
       return reply.code(401).send({ error: 'Invalid username or password' });
     }
@@ -41,6 +45,27 @@ export default async function authRoutes(app, { db, config }) {
       role: user.role,
       csrfToken: session.csrf,
     });
+  }
+
+  function matchesInitialAdminPassword(password) {
+    const supplied = typeof password === 'string' ? password : '';
+    const expected = config.initialAdminPassword || '';
+    const suppliedDigest = createHash('sha256').update(supplied).digest();
+    const expectedDigest = createHash('sha256').update(expected).digest();
+    return Boolean(expected) && timingSafeEqual(suppliedDigest, expectedDigest);
+  }
+
+  function authenticateAdmin(request, reply, password) {
+    const valid = matchesInitialAdminPassword(password);
+    const user = db.prepare("SELECT * FROM users WHERE username = ? AND role = 'admin' AND disabled = 0")
+      .get(config.initialAdminUsername);
+    if (!valid || !user) {
+      audit(db, { action: 'admin.login_failed', targetType: 'user', targetId: config.initialAdminUsername, ip: request.ip });
+      return reply.code(401).send({ error: 'Invalid username or password' });
+    }
+    const session = issue(reply, user.id);
+    audit(db, { actorId: user.id, action: 'admin.login', targetType: 'user', targetId: user.id, ip: request.ip });
+    return reply.send({ id: user.id, username: user.username, role: user.role, csrfToken: session.csrf });
   }
 
   app.post('/api/login', { config: { rateLimit: { max: 10, timeWindow: '5 minutes' } } }, async (request, reply) => {
@@ -68,20 +93,7 @@ export default async function authRoutes(app, { db, config }) {
   });
 
   app.post('/api/login/admin', { config: { rateLimit: { max: 10, timeWindow: '5 minutes' } } }, async (request, reply) => {
-    const supplied = typeof request.body?.password === 'string' ? request.body.password : '';
-    const expected = config.initialAdminPassword || '';
-    const suppliedDigest = createHash('sha256').update(supplied).digest();
-    const expectedDigest = createHash('sha256').update(expected).digest();
-    const valid = Boolean(expected) && timingSafeEqual(suppliedDigest, expectedDigest);
-    const user = db.prepare("SELECT * FROM users WHERE username = ? AND role = 'admin' AND disabled = 0")
-      .get(config.initialAdminUsername);
-    if (!valid || !user) {
-      audit(db, { action: 'admin.login_failed', targetType: 'user', targetId: config.initialAdminUsername, ip: request.ip });
-      return reply.code(401).send({ error: 'Invalid admin password' });
-    }
-    const session = issue(reply, user.id);
-    audit(db, { actorId: user.id, action: 'admin.login', targetType: 'user', targetId: user.id, ip: request.ip });
-    return reply.send({ id: user.id, username: user.username, role: user.role, csrfToken: session.csrf });
+    return authenticateAdmin(request, reply, request.body?.password);
   });
 
   app.post('/api/logout', async (request, reply) => {

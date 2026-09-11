@@ -12,6 +12,8 @@ const state = {
   modal: null,
   view: null,
   passwordError: null,
+  loginError: null,
+  loginNotice: null,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -70,16 +72,15 @@ async function loadAdmin() {
 }
 
 function loginView() {
+  // One card, one form: the login error stays inside the card instead of the page banner.
   return '<section class="auth-shell"><div class="auth-card"><div class="brand-mark">9</div>' +
     '<span class="eyebrow">LLM GATEWAY</span><h2>Welcome back</h2>' +
-    '<div class="login-tabs"><button class="primary" id="login-user-tab">User</button>' +
-    '<button id="login-admin-tab">Admin</button></div>' +
-    '<form id="login-user-form"><label>Username<input id="lu" autocomplete="username" autofocus></label>' +
+    '<form id="login-user-form" class="login-form"><label>Username<input id="lu" autocomplete="username" autofocus></label>' +
     '<label>Password<input id="lp" type="password" autocomplete="current-password"></label>' +
+    (state.loginError ? '<div class="notice error login-error">' + esc(state.loginError) + '</div>' : '') +
+    (state.loginNotice ? '<div class="notice ok login-error">' + esc(state.loginNotice) + '</div>' : '') +
     '<div class="login-actions"><button class="primary" type="submit">Sign in</button>' +
     '<button id="login-new" type="button">New</button></div></form>' +
-    '<form id="login-admin-form" hidden><label>Admin password<input id="lap" type="password" autocomplete="current-password"></label>' +
-    '<button class="primary wide" type="submit">Sign in as admin</button></form>' +
     '</div></section>';
 }
 
@@ -290,11 +291,8 @@ function closeModal() {
 }
 
 function bind() {
-  if ($('login-user-form')) $('login-user-form').onsubmit = (event) => { event.preventDefault(); submitLogin(false); };
+  if ($('login-user-form')) $('login-user-form').onsubmit = (event) => { event.preventDefault(); submitLogin(); };
   if ($('login-new')) $('login-new').onclick = registerUser;
-  if ($('login-admin-form')) $('login-admin-form').onsubmit = (event) => { event.preventDefault(); submitLogin(true); };
-  if ($('login-user-tab')) $('login-user-tab').onclick = () => switchLogin(false);
-  if ($('login-admin-tab')) $('login-admin-tab').onclick = () => switchLogin(true);
   if ($('btn-logout')) $('btn-logout').onclick = async () => { await api('/api/logout', { method: 'POST' }); location.reload(); };
   if ($('btn-password-view')) $('btn-password-view').onclick = () => {
     state.view = 'password';
@@ -344,14 +342,6 @@ function bind() {
   if ($('complete-oauth')) $('complete-oauth').onclick = completeOAuth;
   if ($('confirm-reset')) $('confirm-reset').onclick = resetUserPassword;
   if ($('confirm-remove-user')) $('confirm-remove-user').onclick = removeUser;
-}
-
-function switchLogin(admin) {
-  $('login-user-form').hidden = admin;
-  $('login-admin-form').hidden = !admin;
-  $('login-user-tab').className = admin ? '' : 'primary';
-  $('login-admin-tab').className = admin ? 'primary' : '';
-  (admin ? $('lap') : $('lu')).focus();
 }
 
 async function act(element, action) {
@@ -407,24 +397,47 @@ async function completeOAuth() {
   }
 }
 
-async function submitLogin(admin) {
+async function submitLogin() {
+  const credentials = { username: $('lu').value, password: $('lp').value };
   try {
-    const path = admin ? '/api/login/admin' : '/api/login';
-    const body = admin ? { password: $('lap').value } : { username: $('lu').value, password: $('lp').value };
-    state.me = await api(path, { method: 'POST', body: JSON.stringify(body) });
+    state.me = await api('/api/login', { method: 'POST', body: JSON.stringify(credentials) });
+    state.loginError = null;
+    state.loginNotice = null;
     state.tab = state.me.role === 'admin' ? 'admin' : 'providers';
     await refresh();
-  } catch (error) { notify(error.message); }
+  } catch (error) {
+    // Login problems belong to the card, not to the page-wide banner.
+    state.loginError = error.message;
+    state.loginNotice = null;
+    render();
+    restoreLoginInput(credentials);
+  }
 }
 
 async function registerUser() {
+  const credentials = { username: $('lu').value, password: $('lp').value };
   const button = $('login-new');
-  await act(button, async () => {
-    state.me = await api('/api/register', { method: 'POST', body: JSON.stringify({ username: $('lu').value, password: $('lp').value }) });
+  button.disabled = true;
+  try {
+    state.me = await api('/api/register', { method: 'POST', body: JSON.stringify(credentials) });
+    state.loginError = null;
+    state.loginNotice = null;
     state.tab = 'providers';
     state.message = { text: 'User created successfully.', kind: 'ok' };
     await refresh();
-  });
+  } catch (error) {
+    state.loginError = error.message;
+    state.loginNotice = null;
+    render();
+    restoreLoginInput(credentials);
+  }
+}
+
+function restoreLoginInput(credentials) {
+  if (!$('lu')) return;
+  $('lu').value = credentials.username;
+  $('lp').value = credentials.password;
+  $('lu').focus();
 }
 
 async function changePassword() {

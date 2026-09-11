@@ -163,7 +163,8 @@ tr:hover td{background:var(--bg-alt)}
 .auth-card .brand-mark{margin-bottom:14px}
 .auth-card h2{font-size:23px;margin:4px 0}
 .auth-card p{color:var(--muted);margin:0 0 22px;font-size:13px}
-.login-tabs{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-bottom:16px}
+.login-form{margin-top:16px}
+.login-error{margin:0 0 13px}
 .login-actions{display:grid;grid-template-columns:2fr 1fr;gap:8px}
 .login-actions button{width:100%;padding:11px}
 .form-hint{margin:12px 0 0!important;font-size:11px!important;text-align:center}

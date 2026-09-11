@@ -70,6 +70,11 @@ test('admin login uses INIT_ADMIN_PASSWORD independently of the database passwor
   });
   assert.equal(loginWithInit.statusCode, 200);
   assert.equal(loginWithInit.json().role, 'admin');
+  const unifiedLogin = await app.inject({
+    method: 'POST', url: '/api/login', payload: { username: 'admin', password: 'configured init password' },
+  });
+  assert.equal(unifiedLogin.statusCode, 200);
+  assert.equal(unifiedLogin.json().role, 'admin');
   const loginWithDbPassword = await app.inject({
     method: 'POST', url: '/api/login/admin', payload: { password: 'correct horse battery' },
   });
