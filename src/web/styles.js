@@ -16,13 +16,21 @@ export const styles = `
   --shadow-warm:0 2px 12px -2px rgba(229,106,74,.18);
 }
 @media (prefers-color-scheme:dark){
-  :root{
+  :root:not([data-theme="light"]){
     --bg:#1a1a1a;--bg-alt:#1F1F1E;--surface:#262626;--surface-2:#303030;--sidebar:#1e1e1e;
     --border:#333;--border-subtle:#2a2a2a;
     --text:#ededed;--muted:#9ca3af;--subtle:#6b7280;
     --danger:#ef4444;--success:#22c55e;--warning:#fbbf24;--info:#60a5fa;
     --shadow-elev:inset 0 1px 0 0 rgba(255,255,255,.06),0 1px 2px rgba(0,0,0,.4),0 16px 48px -8px rgba(0,0,0,.55);
   }
+}
+/* Explicit choice from the theme toggle always wins over the OS preference. */
+:root[data-theme="dark"]{
+  --bg:#1a1a1a;--bg-alt:#1F1F1E;--surface:#262626;--surface-2:#303030;--sidebar:#1e1e1e;
+  --border:#333;--border-subtle:#2a2a2a;
+  --text:#ededed;--muted:#9ca3af;--subtle:#6b7280;
+  --danger:#ef4444;--success:#22c55e;--warning:#fbbf24;--info:#60a5fa;
+  --shadow-elev:inset 0 1px 0 0 rgba(255,255,255,.06),0 1px 2px rgba(0,0,0,.4),0 16px 48px -8px rgba(0,0,0,.55);
 }
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--text);font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,sans-serif}
@@ -46,6 +54,7 @@ body.signed-out .workspace{margin-left:0;width:100%}
 .topbar{height:66px;background:var(--surface);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 26px;position:sticky;top:0;z-index:5}
 h1{font-size:19px;margin:2px 0 0}
 .eyebrow{font-size:10px;letter-spacing:1.4px;color:var(--brand);font-weight:800}
+.topbar-actions{display:flex;align-items:center;gap:14px}
 #session{display:flex;gap:12px;align-items:center;font-size:12px;color:var(--muted);padding-top:4px}
 #session .who{display:flex;flex-direction:column;line-height:1.25;text-align:right;padding:4px 0}
 #session .who strong{color:var(--text)}
@@ -164,6 +173,8 @@ tr:hover td{background:var(--bg-alt)}
 .auth-card h2{font-size:23px;margin:4px 0}
 .auth-card p{color:var(--muted);margin:0 0 22px;font-size:13px}
 .login-form{margin-top:16px}
+.theme-toggle{display:inline-flex;align-items:center;gap:6px;padding:7px 11px}
+.theme-toggle .ico{font-size:13px;line-height:1}
 .login-error{margin:0 0 13px}
 .login-actions{display:grid;grid-template-columns:2fr 1fr;gap:8px}
 .login-actions button{width:100%;padding:11px}

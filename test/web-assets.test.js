@@ -44,6 +44,23 @@ test('client bundle parses and merges quota into the providers surface', () => {
   assert.doesNotMatch(appScript, /window\.prompt/);
 });
 
+test('the portal ships English copy only and a persisted theme toggle', () => {
+  const vietnameseDiacritics = /[\u00C0-\u1EF9]/;
+  assert.doesNotMatch(appScript, vietnameseDiacritics);
+  assert.doesNotMatch(renderApp(), vietnameseDiacritics);
+  assert.doesNotMatch(appScript, /LLM GATEWAY/);
+  assert.doesNotMatch(renderApp(), /LLM GATEWAY/);
+  assert.match(appScript, /LLM PORTAL/);
+  assert.match(renderApp(), /LLM PORTAL/);
+  assert.match(renderApp(), /<html lang="en">/);
+  // Theme choice survives reloads and is applied before first paint.
+  assert.match(renderApp(), /portal-theme/);
+  assert.match(renderApp(), /id="theme-slot"/);
+  assert.match(appScript, /themeButton/);
+  assert.match(appScript, /toggleTheme/);
+  assert.match(appScript, /localStorage\.setItem\(THEME_KEY/);
+});
+
 test('served assets contain the 9Router-inspired portal shell', () => {
   assert.match(renderApp(), /<aside class="sidebar">/);
   assert.match(renderApp(), /id="modal-root"/);
@@ -58,6 +75,10 @@ test('served assets contain the 9Router-inspired portal shell', () => {
   assert.match(styles, /\.sponsor-group table\{table-layout:fixed/);
   assert.match(styles, /\.login-form\{margin-top:16px\}/);
   assert.match(styles, /\.auth-card\{width:min\(480px,100%\)/);
+  // Theme toggle: explicit choice beats the OS preference.
+  assert.match(styles, /:root\[data-theme="dark"\]/);
+  assert.match(styles, /:root:not\(\[data-theme="light"\]\)/);
+  assert.match(styles, /\.theme-toggle\{display:inline-flex/);
   assert.match(styles, /\.login-actions\{display:grid/);
   for (const status of ['active', 'disabled', 'failed', 'needs_reauth', 'pending']) {
     assert.match(styles, new RegExp('\\.badge\\.' + status + '\\b'));

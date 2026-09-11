@@ -17,6 +17,32 @@ const state = {
 };
 
 const $ = (id) => document.getElementById(id);
+
+const THEME_KEY = 'portal-theme';
+
+function storedTheme() {
+  try { return localStorage.getItem(THEME_KEY); } catch { return null; }
+}
+
+function currentTheme() {
+  const saved = storedTheme();
+  if (saved === 'light' || saved === 'dark') return saved;
+  return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+}
+
+function themeButton() {
+  const theme = currentTheme();
+  const label = theme === 'dark' ? 'Light mode' : 'Dark mode';
+  return '<button class="theme-toggle" id="theme-toggle" title="' + label + '" aria-label="' + label + '">' +
+    '<span class="ico">' + (theme === 'dark' ? '\u263C' : '\u263D') + '</span>' + label + '</button>';
+}
+
+function toggleTheme() {
+  const next = currentTheme() === 'dark' ? 'light' : 'dark';
+  document.documentElement.dataset.theme = next;
+  try { localStorage.setItem(THEME_KEY, next); } catch { /* storage disabled: keep the in-memory theme */ }
+  render();
+}
 const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (char) =>
   ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
 
@@ -74,7 +100,7 @@ async function loadAdmin() {
 function loginView() {
   // One card, one form: the login error stays inside the card instead of the page banner.
   return '<section class="auth-shell"><div class="auth-card"><div class="brand-mark">9</div>' +
-    '<span class="eyebrow">LLM GATEWAY</span><h2>Welcome back</h2>' +
+    '<span class="eyebrow">LLM PORTAL</span><h2>Welcome back</h2>' +
     '<form id="login-user-form" class="login-form"><label>Username<input id="lu" autocomplete="username" autofocus></label>' +
     '<label>Password<input id="lp" type="password" autocomplete="current-password"></label>' +
     (state.loginError ? '<div class="notice error login-error">' + esc(state.loginError) + '</div>' : '') +
@@ -123,7 +149,7 @@ function providersView() {
     // Quota Tracker lives here now: the same row it belongs to, read-only.
     '<tr class="quota-row"><td colspan="7">' + quotaStrip(account) + '</td></tr>').join('');
   const missingRouters = ['ninerouter', 'omniroute'].filter((router) => !state.routers[router]?.configured);
-  return (missingRouters.length ? '<div class="notice bad">Router sync chưa được cấu hình: ' + esc(missingRouters.join(', ')) + '.</div>' : '') +
+  return (missingRouters.length ? '<div class="notice bad">Router sync is not configured: ' + esc(missingRouters.join(', ')) + '.</div>' : '') +
     '<div class="panel"><div class="panel-head"><div><h2>Add provider</h2></div></div>' +
     '<div class="grid-cards">' + providerCard('claude', 'Claude Code', 'Anthropic OAuth account') +
     providerCard('codex', 'Codex', 'OpenAI ChatGPT OAuth account') + '</div></div>' +
@@ -135,13 +161,13 @@ function providersView() {
 
 function quotaStrip(account) {
   const quota = state.quotas[account.id];
-  if (!quota) return '<div class="quota-inline"><span class="quota-hint">Đang tải quota…</span></div>';
+  if (!quota) return '<div class="quota-inline"><span class="quota-hint">Loading quota…</span></div>';
   const entries = Object.entries(quota.quotas || {});
-  if (!entries.length) return '<div class="quota-inline"><span class="quota-hint">Upstream không trả về quota window.</span></div>';
+  if (!entries.length) return '<div class="quota-inline"><span class="quota-hint">Upstream returned no quota window.</span></div>';
   // Two windows split the row evenly so the strip lines up with the table above.
   return '<div class="quota-inline">' +
     entries.map(([name, value]) => '<span class="quota-chip"><b>' + esc(name === 'session' ? 'session' : name) + '</b>' +
-      '<i>' + Math.round(value.remaining) + '% còn lại</i>' +
+      '<i>' + Math.round(value.remaining) + '% remaining</i>' +
       '<span class="progress"><span style="width:' + Math.max(0, Math.min(100, value.remaining)) + '%"></span></span>' +
       '<small>Reset: ' + (value.resetAt ? new Date(value.resetAt).toLocaleString() : '—') + '</small></span>').join('') +
     '</div>';
@@ -193,14 +219,14 @@ function oauthModal(modal) {
     ? '<div class="waiting-row"><span class="spinner"></span>Preparing secure OAuth session…</div>'
     : '<div class="waiting-row"><span class="spinner"></span>Waiting for browser authorization…</div>' +
       '<div class="step"><div class="step-title"><span class="step-num">1</span>Open OAuth URL in browser</div>' +
-      '<p class="step-hint">Popup đã mở giống 9Router. Nếu popup bị chặn, dùng nút Open OAuth.</p>' +
+      '<p class="step-hint">The popup opens just like 9Router. If it is blocked, use the Open OAuth button.</p>' +
       '<div class="auth-url"><input id="oauth-url" value="' + esc(modal.url) + '" readonly>' +
       '<button id="copy-oauth">Copy</button><button class="primary" id="open-oauth">Open OAuth</button></div></div>' +
       '<div class="divider"><i></i><span>then</span><i></i></div>' +
       '<div class="step"><div class="step-title"><span class="step-num">2</span>Paste ' + pasteLabel + '</div>' +
       '<p class="step-hint">' + (modal.provider === 'claude'
-        ? 'Sau khi authorize, Claude hiển thị code. Copy toàn bộ giá trị code#state.'
-        : 'Sau redirect localhost, copy toàn bộ URL trên address bar dù trang callback không mở được.') + '</p>' +
+        ? 'After you authorize, Claude shows a code. Copy the whole code#state value.'
+        : 'After the localhost redirect, copy the whole address bar URL even if the callback page fails to load.') + '</p>' +
       '<textarea id="oauth-callback" class="mono" placeholder="' + esc(placeholder) + '"></textarea></div>' +
       (modal.error ? '<div class="notice error">' + esc(modal.error) + '</div>' : '');
   return modalFrame('Connect ' + providerName, body,
@@ -209,7 +235,7 @@ function oauthModal(modal) {
 }
 
 function resetPasswordModal(modal) {
-  return modalFrame('Reset password', '<p>Set password mới cho <strong>' + esc(modal.username) + '</strong>. Session hiện tại của user sẽ bị logout.</p>' +
+  return modalFrame('Reset password', '<p>Set a new password for <strong>' + esc(modal.username) + '</strong>. Their current sessions are signed out.</p>' +
     '<label>New password<input id="reset-pass" type="password" autocomplete="new-password" placeholder="Minimum 12 characters"></label>' +
     '<label>Confirm password<input id="reset-pass-confirm" type="password" autocomplete="new-password"></label>' +
     (modal.error ? '<div class="notice error">' + esc(modal.error) + '</div>' : ''),
@@ -218,7 +244,7 @@ function resetPasswordModal(modal) {
 
 function removeUserModal(modal) {
   return modalFrame('Remove user', '<p>Remove <strong>' + esc(modal.username) + '</strong>?</p>' +
-    '<div class="notice bad">Provider accounts của user sẽ được xóa khỏi 9Router trước. Không thể undo.</div>' +
+    '<div class="notice bad">Their provider accounts are removed from the routers first. This cannot be undone.</div>' +
     (modal.error ? '<div class="notice error">' + esc(modal.error) + '</div>' : ''),
   '<button id="close-modal">Cancel</button><button class="danger" id="confirm-remove-user">Remove user</button>');
 }
@@ -250,6 +276,7 @@ async function selectTab(tab) {
 function render(extra) {
   document.body.classList.toggle('signed-out', !state.me);
   const banner = state.message ? '<div class="notice ' + esc(state.message.kind) + '">' + esc(state.message.text) + '</div>' : '';
+  if ($('theme-slot')) $('theme-slot').innerHTML = themeButton();
   if (!state.me) {
     $('session').innerHTML = '';
     $('nav').innerHTML = '';
@@ -291,6 +318,7 @@ function closeModal() {
 }
 
 function bind() {
+  if ($('theme-toggle')) $('theme-toggle').onclick = toggleTheme;
   if ($('login-user-form')) $('login-user-form').onsubmit = (event) => { event.preventDefault(); submitLogin(); };
   if ($('login-new')) $('login-new').onclick = registerUser;
   if ($('btn-logout')) $('btn-logout').onclick = async () => { await api('/api/logout', { method: 'POST' }); location.reload(); };
@@ -389,7 +417,7 @@ async function completeOAuth() {
   try {
     await api('/api/oauth/' + state.modal.provider + '/complete', { method: 'POST', body: JSON.stringify({ callback }) });
     state.modal = null;
-    state.message = { text: 'OAuth connected. Credential synced to 9Router.', kind: 'ok' };
+    state.message = { text: 'OAuth connected. Credential synced to the routers.', kind: 'ok' };
     await refresh();
   } catch (error) {
     state.modal.error = error.message;
