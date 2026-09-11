@@ -186,6 +186,8 @@ tr:hover td{background:var(--bg-alt)}
 .settings-form label{margin-bottom:0}
 .settings-form button{height:40px}
 .connections-table th,.connections-table td{white-space:nowrap}
+.role-select{width:110px;margin:0;padding:8px 10px}
+.pagination{display:flex;justify-content:flex-end;align-items:center;gap:12px;padding:14px 18px;border-top:1px solid var(--border-subtle);color:var(--muted);font-size:12px}
 
 @media(max-width:860px){
   .sidebar{width:66px;padding:18px 8px}

@@ -9,7 +9,7 @@ import { testApp } from './helpers/test-app.js';
 
 test('client bundle parses and merges quota into the providers surface', () => {
   assert.doesNotThrow(() => new vm.Script(appScript));
-  for (const label of ['Providers', 'Sponsors', 'Admin']) assert.match(appScript, new RegExp(label));
+  for (const label of ['Providers', 'Sponsors', 'Admin', 'Audit log']) assert.match(appScript, new RegExp(label));
   // Quota Tracker is no longer a separate tab: it renders under each account row.
   assert.match(appScript, /quota-row/);
   assert.match(appScript, /quotaStrip/);
@@ -43,6 +43,12 @@ test('client bundle parses and merges quota into the providers surface', () => {
   assert.match(appScript, /Before expiry \(hours\)/);
   assert.match(appScript, /refresh-settings-form/);
   assert.match(appScript, /updateRefreshSettings/);
+  assert.match(appScript, /data-role-user/);
+  assert.match(appScript, /updateUserRole/);
+  assert.match(appScript, /function auditView/);
+  assert.match(appScript, /audit-prev/);
+  assert.match(appScript, /audit-next/);
+  assert.match(appScript, /pageSize=25/);
   assert.match(appScript, /btn-password-cancel/);
   assert.doesNotMatch(appScript, /Không bắt buộc đổi password lần đầu/);
   assert.doesNotMatch(appScript, /window\.prompt/);
@@ -81,6 +87,8 @@ test('served assets contain the 9Router-inspired portal shell', () => {
   assert.match(styles, /\.auth-card\{width:min\(480px,100%\)/);
   assert.match(styles, /main\{max-width:1440px/);
   assert.match(styles, /\.connections-table th,\.connections-table td\{white-space:nowrap\}/);
+  assert.match(styles, /\.role-select\{width:110px/);
+  assert.match(styles, /\.pagination\{display:flex/);
   // Theme toggle: explicit choice beats the OS preference.
   assert.match(styles, /:root\[data-theme="dark"\]/);
   assert.match(styles, /:root:not\(\[data-theme="light"\]\)/);

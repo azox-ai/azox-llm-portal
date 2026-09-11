@@ -88,6 +88,44 @@ test('admin reads and updates the token refresh lead time in hours', async (t) =
   assert.equal(db.prepare("SELECT value FROM app_settings WHERE key = 'refresh_lead_hours'").get().value, '12');
 });
 
+test('admin changes roles and audit pagination resolves user targets', async (t) => {
+  const { app, db } = await testApp();
+  t.after(() => { app.close(); db.close(); });
+  const admin = await session(app, db, 'admin', 'admin');
+  const aliceId = await seedUser(db, 'alice');
+
+  const promoted = await app.inject({
+    method: 'PATCH', url: `/api/admin/users/${aliceId}`, headers: authHeaders(admin),
+    payload: { role: 'admin' },
+  });
+  assert.equal(promoted.statusCode, 200);
+  assert.equal(db.prepare('SELECT role FROM users WHERE id = ?').get(aliceId).role, 'admin');
+
+  db.prepare('DELETE FROM audit_log').run();
+  const addAudit = db.prepare(`
+    INSERT INTO audit_log (actor_id, action, target_type, target_id, detail)
+    VALUES (?, ?, 'user', ?, NULL)
+  `);
+  for (let index = 1; index <= 27; index += 1) {
+    addAudit.run(admin.response.json().id, `test.action_${index}`, String(aliceId));
+  }
+
+  const first = await app.inject({ method: 'GET', url: '/api/admin/audit?page=1&pageSize=25', headers: { cookie: admin.cookie } });
+  assert.equal(first.statusCode, 200);
+  assert.equal(first.json().items.length, 25);
+  assert.equal(first.json().page, 1);
+  assert.equal(first.json().total, 27);
+  assert.equal(first.json().totalPages, 2);
+  assert.equal(first.json().items[0].target, 'alice');
+  assert.equal(first.json().items[0].target.includes('user:'), false);
+
+  const second = await app.inject({ method: 'GET', url: '/api/admin/audit?page=2&pageSize=25', headers: { cookie: admin.cookie } });
+  assert.equal(second.statusCode, 200);
+  assert.equal(second.json().items.length, 2);
+  assert.equal(second.json().page, 2);
+  assert.equal(second.json().items[0].target, 'alice');
+});
+
 test('admin login uses INIT_ADMIN_PASSWORD independently of the database password', async (t) => {
   const { app, db } = await testApp({ config: { initialAdminUsername: 'admin', initialAdminPassword: 'configured init password' } });
   t.after(() => { app.close(); db.close(); });

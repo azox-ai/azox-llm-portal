@@ -164,11 +164,39 @@ export default async function adminRoutes(app, { db, adapters, config }) {
 
   app.get('/api/admin/audit', async (request, reply) => {
     if (!requireAdmin(request, reply)) return reply;
-    const limit = Math.min(Number(request.query.limit) || 100, 500);
-    return db.prepare(`
-      SELECT l.id, l.action, l.target_type, l.target_id, l.detail, l.created_at, u.username AS actor
-      FROM audit_log l LEFT JOIN users u ON u.id = l.actor_id
-      ORDER BY l.id DESC LIMIT ?
-    `).all(limit);
+    const page = Math.max(1, Number.parseInt(request.query.page, 10) || 1);
+    const pageSize = Math.min(100, Math.max(10, Number.parseInt(request.query.pageSize, 10) || 25));
+    const total = db.prepare('SELECT COUNT(*) AS total FROM audit_log').get().total;
+    const items = db.prepare(`
+      SELECT l.id, l.action, l.target_type, l.target_id, l.detail, l.created_at,
+        actor.username AS actor,
+        CASE
+          WHEN l.target_type = 'user' THEN COALESCE(target_user.username, NULLIF(l.detail, ''), l.target_id, '-')
+          WHEN l.target_type = 'account' THEN COALESCE(target_account.display_name, 'Account #' || l.target_id)
+          WHEN l.target_id IS NOT NULL THEN l.target_id
+          ELSE '-'
+        END AS target
+      FROM audit_log l
+      LEFT JOIN users actor ON actor.id = l.actor_id
+      LEFT JOIN users target_user
+        ON l.target_type = 'user' AND target_user.id = CAST(l.target_id AS INTEGER)
+      LEFT JOIN provider_accounts target_account
+        ON l.target_type = 'account' AND target_account.id = CAST(l.target_id AS INTEGER)
+      ORDER BY l.id DESC LIMIT ? OFFSET ?
+    `).all(pageSize, (page - 1) * pageSize).map((entry) => ({
+      id: entry.id,
+      time: entry.created_at,
+      actor: entry.actor || 'system',
+      action: entry.action,
+      target: entry.target,
+      detail: entry.detail,
+    }));
+    return {
+      items,
+      page,
+      pageSize,
+      total,
+      totalPages: Math.max(1, Math.ceil(total / pageSize)),
+    };
   });
 }

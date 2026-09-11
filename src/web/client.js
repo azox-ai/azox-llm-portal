@@ -8,7 +8,7 @@ const state = {
   quotas: {},
   sponsors: [],
   users: [],
-  audit: [],
+  audit: { items: [], page: 1, pageSize: 25, total: 0, totalPages: 1 },
   settings: null,
   modal: null,
   view: null,
@@ -95,11 +95,14 @@ async function loadSponsors() {
 }
 
 async function loadAdmin() {
-  [state.users, state.audit, state.settings] = await Promise.all([
+  [state.users, state.settings] = await Promise.all([
     api('/api/admin/users'),
-    api('/api/admin/audit?limit=40'),
     api('/api/admin/settings'),
   ]);
+}
+
+async function loadAudit(page = 1) {
+  state.audit = await api('/api/admin/audit?page=' + page + '&pageSize=25');
 }
 
 function loginView() {
@@ -197,14 +200,14 @@ function sponsorsView() {
 
 function adminView() {
   const userRows = state.users.map((user) => '<tr><td><div><strong>' + esc(user.username) + '</strong><small class="row-sub">' +
-    new Date(user.createdAt).toLocaleString() + '</small></div></td><td>' + esc(user.role) + '</td><td>' + user.accountCount +
+    new Date(user.createdAt).toLocaleString() + '</small></div></td><td><select class="role-select" data-role-user="' + user.id +
+    '" data-current-role="' + esc(user.role) + '"><option value="user"' + (user.role === 'user' ? ' selected' : '') +
+    '>user</option><option value="admin"' + (user.role === 'admin' ? ' selected' : '') + '>admin</option></select></td><td>' + user.accountCount +
     '</td><td>' + statusBadge(user.disabled ? 'disabled' : 'active') + '</td><td class="actions">' +
     '<button data-reset-user="' + user.id + '" data-username="' + esc(user.username) + '">Reset password</button>' +
     '<button data-disable="' + user.id + '" data-value="' + (user.disabled ? '0' : '1') + '">' + (user.disabled ? 'Enable' : 'Disable') + '</button>' +
     (user.id === state.me.id ? '' : '<button class="danger" data-remove-user="' + user.id + '" data-username="' + esc(user.username) + '">Remove</button>') +
     '</td></tr>').join('');
-  const auditRows = state.audit.map((entry) => '<tr><td>' + esc(entry.created_at) + '</td><td>' + esc(entry.actor || 'system') +
-    '</td><td>' + esc(entry.action) + '</td><td>' + esc(entry.target_type) + ':' + esc(entry.target_id || '-') + '</td></tr>').join('');
   const refreshLeadHours = state.settings?.refreshLeadHours ?? 8;
   return '<div class="panel"><div class="panel-head"><div><h2>Token refresh</h2>' +
     '<p>Refresh provider tokens this many hours before expiry. Changes apply to the next scheduler run.</p></div></div>' +
@@ -217,9 +220,18 @@ function adminView() {
     '<label>Role<select id="new-role"><option value="user">user</option><option value="admin">admin</option></select></label>' +
     '<button class="primary" type="submit">Create user</button></form><div class="table-wrap"><table><thead><tr><th>Username</th><th>Role</th>' +
     '<th>Accounts</th><th>State</th><th></th></tr></thead><tbody>' + userRows + '</tbody></table></div></div>' +
-    '<div class="panel"><div class="panel-head"><div><h2>Audit log</h2><p>Credential and token values never logged.</p></div></div>' +
+    '';
+}
+
+function auditView() {
+  const auditRows = state.audit.items.map((entry) => '<tr><td>' + esc(entry.time) + '</td><td>' + esc(entry.actor) +
+    '</td><td>' + esc(entry.action) + '</td><td>' + esc(entry.target) + '</td></tr>').join('');
+  return '<div class="panel"><div class="panel-head"><div><h2>Audit log</h2><p>Credential and token values never logged.</p></div></div>' +
     '<div class="table-wrap"><table><thead><tr><th>Time</th><th>Actor</th><th>Action</th><th>Target</th></tr></thead><tbody>' +
-    auditRows + '</tbody></table></div></div>';
+    (auditRows || '<tr><td colspan="4" class="empty">No audit entries.</td></tr>') + '</tbody></table></div>' +
+    '<div class="pagination"><button id="audit-prev"' + (state.audit.page <= 1 ? ' disabled' : '') + '>Previous</button>' +
+    '<span>Page ' + state.audit.page + ' of ' + state.audit.totalPages + ' · ' + state.audit.total + ' entries</span>' +
+    '<button id="audit-next"' + (state.audit.page >= state.audit.totalPages ? ' disabled' : '') + '>Next</button></div></div>';
 }
 
 function oauthModal(modal) {
@@ -279,6 +291,7 @@ async function selectTab(tab) {
   state.passwordError = null;
   state.tab = tab;
   if (tab === 'admin') await loadAdmin();
+  if (tab === 'audit') await loadAudit();
   if (tab === 'sponsors') await loadSponsors();
   render();
   if (tab === 'providers') loadQuotas();
@@ -299,13 +312,13 @@ function render(extra) {
   }
   $('page-title').textContent = state.view === 'password'
     ? 'Change password'
-    : ({ providers: 'Providers', sponsors: 'Sponsors', admin: 'Admin' }[state.tab] || 'Portal');
+    : ({ providers: 'Providers', sponsors: 'Sponsors', admin: 'Admin', audit: 'Audit log' }[state.tab] || 'Portal');
   $('session').innerHTML = '<div class="who"><strong>' + esc(state.me.username) + '</strong><span>' + esc(state.me.role) + '</span></div>' +
     '<button id="btn-password-view">Change password</button><button class="ghost" id="btn-logout">Logout</button>';
   const navItems = [
     ['providers', '◈', 'Providers'],
     ['sponsors', '♧', 'Sponsors'],
-    ...(state.me.role === 'admin' ? [['admin', '♙', 'Admin']] : []),
+    ...(state.me.role === 'admin' ? [['admin', '♙', 'Admin'], ['audit', '≣', 'Audit log']] : []),
   ];
   $('nav').innerHTML = navItems.map(([tab, icon, label]) => '<button class="nav-item ' + (state.tab === tab ? 'active' : '') +
     '" data-tab="' + tab + '"><span class="ico">' + icon + '</span>' + label + '</button>').join('');
@@ -313,6 +326,8 @@ function render(extra) {
     ? extra
     : state.view === 'password'
       ? passwordView()
+      : state.tab === 'audit'
+        ? auditView()
       : state.tab === 'admin'
         ? adminView()
         : state.tab === 'sponsors'
@@ -373,6 +388,9 @@ function bind() {
     await api('/api/admin/users/' + element.dataset.disable, { method: 'PATCH', body: JSON.stringify({ disabled: element.dataset.value === '1' }) });
     await loadAdmin(); render();
   }); });
+  document.querySelectorAll('[data-role-user]').forEach((element) => { element.onchange = () => updateUserRole(element); });
+  if ($('audit-prev')) $('audit-prev').onclick = async () => { await loadAudit(state.audit.page - 1); render(); };
+  if ($('audit-next')) $('audit-next').onclick = async () => { await loadAudit(state.audit.page + 1); render(); };
   if ($('create-user-form')) $('create-user-form').onsubmit = (event) => { event.preventDefault(); createUser(); };
   if ($('refresh-settings-form')) $('refresh-settings-form').onsubmit = (event) => { event.preventDefault(); updateRefreshSettings(); };
   if ($('traffic-close')) $('traffic-close').onclick = closeModal;
@@ -517,6 +535,29 @@ async function updateRefreshSettings() {
     state.message = { text: 'Token refresh lead time updated.', kind: 'ok' };
     render();
   });
+}
+
+async function updateUserRole(element) {
+  const previousRole = element.dataset.currentRole;
+  element.disabled = true;
+  try {
+    await api('/api/admin/users/' + element.dataset.roleUser, {
+      method: 'PATCH',
+      body: JSON.stringify({ role: element.value }),
+    });
+    state.me = await api('/api/me');
+    if (state.me.role !== 'admin') {
+      state.tab = 'providers';
+      await refresh();
+      return;
+    }
+    await loadAdmin();
+    render();
+    notify('User role updated.', 'ok');
+  } catch (error) {
+    element.value = previousRole;
+    notify(error.message);
+  }
 }
 
 async function resetUserPassword() {
