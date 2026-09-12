@@ -417,3 +417,90 @@ test('Quota Tracker is GET-only and cannot mutate provider state', async (t) => 
   assert.equal(quota.json().quotas.session.remaining, 75);
   assert.equal((await app.inject({ method: 'POST', url: `/api/accounts/${result.lastInsertRowid}/quota`, headers: authHeaders(auth) })).statusCode, 404);
 });
+
+test('refresh tick keeps a minimum gap between two refreshes of the same account', async (t) => {
+  const now = Date.parse('2030-01-01T00:00:00.000Z');
+  const refreshCalls = [];
+  const { app, db, config, adapters } = await testApp({ config: { refreshLeadMinutes: 60 } });
+  t.after(() => { app.close(); db.close(); });
+  const ownerId = await seedUser(db, 'gap-owner');
+
+  const accountId = Number(db.prepare(`
+    INSERT INTO provider_accounts
+      (owner_id, provider, upstream_subject, display_name, credential_envelope, access_expires_at, last_refresh_at)
+    VALUES (?, 'claude', 'gap-subject', 'gap-subject', ?, ?, ?)
+  `).run(
+    ownerId,
+    encryptJson({ accessToken: 'old', refreshToken: 'refresh-gap' }, config.encryptionKey),
+    new Date(now + 30 * 60_000).toISOString(),
+    new Date(now - 4 * 60_000).toISOString(),
+  ).lastInsertRowid);
+
+  const refreshFetch = async (_url, options) => {
+    refreshCalls.push(JSON.parse(options.body).refresh_token);
+    return new Response(JSON.stringify({ access_token: 'new-access', expires_in: 3600 }), { status: 200 });
+  };
+
+  // Refreshed 4 minutes ago: inside the 10-minute guard, so the tick must skip it.
+  assert.equal(await runRefreshTick(db, adapters, config, refreshFetch, now), 0);
+  assert.deepEqual(refreshCalls, []);
+  assert.equal(db.prepare('SELECT token_version FROM provider_accounts WHERE id = ?').get(accountId).token_version, 1);
+
+  // 11 minutes after the last refresh the account becomes eligible again.
+  assert.equal(await runRefreshTick(db, adapters, config, refreshFetch, now + 7 * 60_000), 1);
+  assert.deepEqual(refreshCalls, ['refresh-gap']);
+  assert.equal(db.prepare('SELECT token_version FROM provider_accounts WHERE id = ?').get(accountId).token_version, 2);
+});
+
+test('refresh tick still runs for an account that has never been refreshed', async (t) => {
+  const now = Date.parse('2030-01-01T00:00:00.000Z');
+  const refreshCalls = [];
+  const { app, db, config, adapters } = await testApp({ config: { refreshLeadMinutes: 60 } });
+  t.after(() => { app.close(); db.close(); });
+  const ownerId = await seedUser(db, 'fresh-owner');
+
+  db.prepare(`
+    INSERT INTO provider_accounts
+      (owner_id, provider, upstream_subject, display_name, credential_envelope, access_expires_at)
+    VALUES (?, 'claude', 'fresh-subject', 'fresh-subject', ?, ?)
+  `).run(
+    ownerId,
+    encryptJson({ accessToken: 'old', refreshToken: 'refresh-fresh' }, config.encryptionKey),
+    new Date(now + 30 * 60_000).toISOString(),
+  );
+
+  const refreshFetch = async (_url, options) => {
+    refreshCalls.push(JSON.parse(options.body).refresh_token);
+    return new Response(JSON.stringify({ access_token: 'new-access', expires_in: 3600 }), { status: 200 });
+  };
+
+  assert.equal(await runRefreshTick(db, adapters, config, refreshFetch, now), 1);
+  assert.deepEqual(refreshCalls, ['refresh-fresh']);
+});
+
+test('a failed refresh does not start the minimum-gap window', async (t) => {
+  const now = Date.parse('2030-01-01T00:00:00.000Z');
+  let attempts = 0;
+  const { app, db, config, adapters } = await testApp({ config: { refreshLeadMinutes: 60 } });
+  t.after(() => { app.close(); db.close(); });
+  const ownerId = await seedUser(db, 'failure-owner');
+
+  db.prepare(`
+    INSERT INTO provider_accounts
+      (owner_id, provider, upstream_subject, display_name, credential_envelope, access_expires_at)
+    VALUES (?, 'claude', 'failure-subject', 'failure-subject', ?, ?)
+  `).run(
+    ownerId,
+    encryptJson({ accessToken: 'old', refreshToken: 'refresh-failure' }, config.encryptionKey),
+    new Date(now + 30 * 60_000).toISOString(),
+  );
+
+  const refreshFetch = async () => {
+    attempts += 1;
+    return new Response('{}', { status: 500 });
+  };
+
+  await runRefreshTick(db, adapters, config, refreshFetch, now);
+  await runRefreshTick(db, adapters, config, refreshFetch, now + 60_000);
+  assert.equal(attempts, 2);
+});

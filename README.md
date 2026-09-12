@@ -14,11 +14,11 @@ Internal account portal for the `llm-gateway` Docker stack.
 - Account labels are the full upstream email or account name, unmasked, and
   every surface shows `Sponsored by: <portal user>` beneath it.
 - Quota Tracker reads upstream quota and exposes no state-changing actions.
-- Portal is the canonical credential owner. It refreshes one hour before expiry,
-  keeps the refresh token encrypted at rest, and pushes only the access token,
-  expiry and identity metadata to 9Router.
-- OmniRoute is intentionally outside this release and will use the same adapter
-  contract after the Portal + 9Router deployment is validated.
+- Portal is the canonical credential owner. Its admin-configured refresh lead is
+  read on every scheduler tick, with a 10-minute minimum gap between successful
+  refreshes of the same account. It keeps the refresh token encrypted at rest
+  and pushes only the access token, expiry and identity metadata to 9Router and
+  OmniRoute.
 
 ## Adding a provider account
 
@@ -40,7 +40,7 @@ Portal calls the internal Docker-network endpoint:
 The request uses `Authorization: Bearer <service token>` and contains
 `accessToken`, `expiresAt`, `tokenVersion`, enabled state and safe identity
 metadata. `refreshToken` is neither sent nor accepted. `tokenVersion` is
-monotonic; 9Router returns `409` for stale writes.
+monotonic; each router returns `409` for stale writes.
 
 Status and removal use `GET` and `DELETE` on the same URL. Tokens are never
 returned by any response.

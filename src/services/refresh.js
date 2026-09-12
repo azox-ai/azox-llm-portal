@@ -3,6 +3,8 @@ import { normalizeTokenSet } from '../oauth/client.js';
 import { reconcileAccount } from './sync.js';
 import { getRefreshLeadMs } from './settings.js';
 
+export const MIN_REFRESH_GAP_MS = 10 * 60_000;
+
 function refreshRequest(provider, providerConfig, refreshToken) {
   const values = {
     grant_type: 'refresh_token',
@@ -69,12 +71,14 @@ export async function refreshAccount(db, adapters, config, accountId, fetchImpl 
 export async function runRefreshTick(db, adapters, config, fetchImpl = fetch, now = Date.now()) {
   // Read the setting on every tick so admin changes apply without a restart.
   const cutoff = new Date(now + getRefreshLeadMs(db, config)).toISOString();
+  const lastEligibleRefresh = new Date(now - MIN_REFRESH_GAP_MS).toISOString();
   const accounts = db.prepare(`
     SELECT id FROM provider_accounts
     WHERE credential_status = 'active'
       AND access_expires_at IS NOT NULL
       AND access_expires_at <= ?
-  `).all(cutoff);
+      AND (last_refresh_at IS NULL OR datetime(last_refresh_at) <= datetime(?))
+  `).all(cutoff, lastEligibleRefresh);
   for (const account of accounts) {
     try { await refreshAccount(db, adapters, config, account.id, fetchImpl); }
     catch { /* recorded on the account; one failure must not block the others */ }
