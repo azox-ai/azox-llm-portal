@@ -34,6 +34,9 @@ test('client bundle parses and merges quota into the providers surface', () => {
   // Quota Tracker is no longer a separate tab: it renders under each account row.
   assert.match(appScript, /quota-row/);
   assert.match(appScript, /quotaStrip/);
+  assert.match(appScript, /data-reauth="' \+ account\.id/);
+  assert.match(appScript, /JSON\.stringify\(\{ accountId \}\)/);
+  assert.match(appScript, /Portal ID:/);
   assert.doesNotMatch(appScript, /\['quota', /);
   assert.doesNotMatch(appScript, /function quotaView/);
   // Quota now loads with the page instead of behind a button.

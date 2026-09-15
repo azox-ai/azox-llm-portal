@@ -169,14 +169,14 @@ function providerCard(provider, title, subtitle) {
 function providersView() {
   const rows = state.accounts.map((account) => '<tr><td><div class="account-name">' +
     providerIcon(account.provider) + '<div><strong>' + esc(account.displayName) + '</strong><small>' +
-    'Sponsored by: ' + esc(account.owner) + '</small></div></div></td><td>' + esc(account.provider === 'claude' ? 'Claude Code' : 'Codex') +
+    'Sponsored by: ' + esc(account.owner) + ' · Portal ID: ' + account.id + '</small></div></div></td><td>' + esc(account.provider === 'claude' ? 'Claude Code' : 'Codex') +
     '</td><td>' + statusBadge(account.status) + '</td><td>' +
     statusBadge(account.routers.ninerouter?.status || 'pending') + '</td><td>' +
     statusBadge(account.routers.omniroute?.status || 'pending') + '</td><td>' +
     (account.accessExpiresAt ? new Date(account.accessExpiresAt).toLocaleString() : '—') + '</td><td class="actions">' +
     '<button data-toggle="' + account.id + '" data-enabled="' + (account.enabled ? '0' : '1') + '">' +
     (account.enabled ? 'Disable' : 'Enable') + '</button><button data-retry="' + account.id + '">Sync</button>' +
-    '<button data-reauth="' + esc(account.provider) + '">Re-auth</button>' +
+    '<button data-reauth="' + account.id + '" data-provider="' + esc(account.provider) + '">Re-auth</button>' +
     '<button class="danger" data-remove-account="' + account.id + '">Delete</button></td></tr>' +
     // Quota Tracker lives here now: the same row it belongs to, read-only.
     '<tr class="quota-row"><td colspan="7">' + quotaStrip(account) + '</td></tr>').join('');
@@ -281,6 +281,7 @@ function auditView() {
 
 function oauthModal(modal) {
   const providerName = modal.provider === 'claude' ? 'Claude Code' : 'Codex';
+  const actionName = modal.accountId === null || modal.accountId === undefined ? 'Connect' : 'Re-authenticate';
   const pasteLabel = modal.provider === 'claude' ? 'authorization code (code#state)' : 'full callback URL';
   const placeholder = modal.provider === 'claude' ? 'Paste code#state here...' : 'http://localhost:1455/auth/callback?code=...&state=...';
   const body = modal.loading
@@ -297,9 +298,9 @@ function oauthModal(modal) {
         : 'After the localhost redirect, copy the whole address bar URL even if the callback page fails to load.') + '</p>' +
       '<textarea id="oauth-callback" class="mono" placeholder="' + esc(placeholder) + '"></textarea></div>' +
       (modal.error ? '<div class="notice error">' + esc(modal.error) + '</div>' : '');
-  return modalFrame('Connect ' + providerName, body,
+  return modalFrame(actionName + ' ' + providerName, body,
     modal.loading ? '<button id="close-modal">Cancel</button>' :
-      '<button id="close-modal">Cancel</button><button class="primary" id="complete-oauth">Connect ' + providerName + '</button>');
+      '<button id="close-modal">Cancel</button><button class="primary" id="complete-oauth">' + actionName + ' ' + providerName + '</button>');
 }
 
 function resetPasswordModal(modal) {
@@ -406,8 +407,11 @@ function bind() {
   };
   if ($('btn-password')) $('btn-password').onclick = changePassword;
   document.querySelectorAll('[data-tab]').forEach((element) => { element.onclick = () => selectTab(element.dataset.tab); });
-  document.querySelectorAll('[data-add], [data-reauth]').forEach((element) => {
-    element.onclick = () => startOAuth(element.dataset.add || element.dataset.reauth);
+  document.querySelectorAll('[data-add]').forEach((element) => {
+    element.onclick = () => startOAuth(element.dataset.add);
+  });
+  document.querySelectorAll('[data-reauth]').forEach((element) => {
+    element.onclick = () => startOAuth(element.dataset.provider, Number(element.dataset.reauth));
   });
   document.querySelectorAll('[data-toggle]').forEach((element) => { element.onclick = () => act(element, async () => {
     await api('/api/accounts/' + element.dataset.toggle + '/state', { method: 'PATCH', body: JSON.stringify({ enabled: element.dataset.enabled === '1' }) });
@@ -453,18 +457,21 @@ async function act(element, action) {
   try { await action(); } catch (error) { notify(error.message); } finally { element.disabled = false; }
 }
 
-async function startOAuth(provider) {
+async function startOAuth(provider, accountId = null) {
   const popup = window.open('', 'portal_oauth', 'width=680,height=760');
-  state.modal = { type: 'oauth', provider, loading: true, error: null };
+  state.modal = { type: 'oauth', provider, accountId, loading: true, error: null };
   render();
   try {
-    const result = await api('/api/oauth/' + provider + '/start', { method: 'POST' });
-    state.modal = { type: 'oauth', provider, loading: false, url: result.url, redirectUri: result.redirectUri, error: null };
+    const result = await api('/api/oauth/' + provider + '/start', {
+      method: 'POST',
+      ...(accountId === null ? {} : { body: JSON.stringify({ accountId }) }),
+    });
+    state.modal = { type: 'oauth', provider, accountId, loading: false, url: result.url, redirectUri: result.redirectUri, error: null };
     render();
     if (popup) popup.location.href = result.url;
   } catch (error) {
     if (popup) popup.close();
-    state.modal = { type: 'oauth', provider, loading: false, url: '', error: error.message };
+    state.modal = { type: 'oauth', provider, accountId, loading: false, url: '', error: error.message };
     render();
   }
 }

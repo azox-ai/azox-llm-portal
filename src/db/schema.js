@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS oauth_states (
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   provider TEXT NOT NULL CHECK (provider IN ('claude', 'codex')),
   verifier TEXT NOT NULL,
+  account_id INTEGER REFERENCES provider_accounts(id) ON DELETE CASCADE,
   expires_at TEXT NOT NULL,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) STRICT;
