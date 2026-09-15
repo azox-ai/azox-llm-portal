@@ -346,6 +346,25 @@ test('Codex quota converts epoch-second reset_at instead of rendering 1970', asy
   assert.match(quota.quotas.session.resetAt, /^2026-/);
 });
 
+test('Claude quota treats utilization as percent used and returns remaining percent', async () => {
+  const quota = await fetchQuota('claude', { accessToken: 'token' }, async () => new Response(JSON.stringify({
+    plan_type: 'max',
+    five_hour: { utilization: 100, resets_at: '2026-09-15T06:30:00.000Z' },
+    seven_day: { utilization: 27.5, resets_at: '2026-09-20T00:00:00.000Z' },
+  }), { status: 200 }));
+
+  assert.deepEqual(quota.quotas.session, {
+    used: 100,
+    remaining: 0,
+    resetAt: '2026-09-15T06:30:00.000Z',
+  });
+  assert.deepEqual(quota.quotas.weekly, {
+    used: 27.5,
+    remaining: 72.5,
+    resetAt: '2026-09-20T00:00:00.000Z',
+  });
+});
+
 test('manual OAuth accepts Claude code#state and a Codex callback URL', () => {
   assert.deepEqual(parseCallbackInput('code-1#state-1'), { code: 'code-1', state: 'state-1' });
   assert.deepEqual(

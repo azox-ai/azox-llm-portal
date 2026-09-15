@@ -7,6 +7,27 @@ import { renderApp } from '../src/web/page.js';
 import { assets, IMMUTABLE_CACHE_CONTROL, NO_STORE_CACHE_CONTROL } from '../src/web/assets.js';
 import { testApp } from './helpers/test-app.js';
 
+function quotaClientHelpers(now) {
+  const initStart = appScript.indexOf('(async function init()');
+  assert.notEqual(initStart, -1, 'client startup marker must exist');
+  let scheduledDelay = null;
+  const FakeDate = class extends Date {
+    static now() { return now; }
+  };
+  const context = vm.createContext({
+    Date: FakeDate,
+    clearTimeout() {},
+    setTimeout(_callback, delay) { scheduledDelay = delay; return 1; },
+  });
+  new vm.Script(appScript.slice(0, initStart) +
+    ';globalThis.quotaTest = { state, quotaName, quotaPercent, quotaResetLabel, scheduleQuotaRefresh };')
+    .runInContext(context);
+  return {
+    ...context.quotaTest,
+    scheduledDelay: () => scheduledDelay,
+  };
+}
+
 test('client bundle parses and merges quota into the providers surface', () => {
   assert.doesNotThrow(() => new vm.Script(appScript));
   for (const label of ['Providers', 'Sponsors', 'Admin', 'Audit log']) assert.match(appScript, new RegExp(label));
@@ -17,6 +38,8 @@ test('client bundle parses and merges quota into the providers surface', () => {
   assert.doesNotMatch(appScript, /function quotaView/);
   // Quota now loads with the page instead of behind a button.
   assert.match(appScript, /loadQuotas/);
+  assert.match(appScript, /scheduleQuotaRefresh/);
+  assert.match(appScript, /Session \(5h\)/);
   assert.doesNotMatch(appScript, /data-quota=/);
   assert.doesNotMatch(appScript, /Bấm Quota để tải usage hiện tại/);
   assert.doesNotMatch(appScript, /Quota Tracker · read-only/);
@@ -52,6 +75,22 @@ test('client bundle parses and merges quota into the providers surface', () => {
   assert.match(appScript, /btn-password-cancel/);
   assert.doesNotMatch(appScript, /Không bắt buộc đổi password lần đầu/);
   assert.doesNotMatch(appScript, /window\.prompt/);
+});
+
+test('quota UI refreshes after reset and labels stale snapshots', () => {
+  const now = Date.parse('2026-09-15T06:07:00.000Z');
+  const quota = quotaClientHelpers(now);
+  assert.equal(quota.quotaName('session'), 'Session (5h)');
+  assert.equal(quota.quotaPercent(0.4), '<1%');
+  assert.match(quota.quotaResetLabel('2026-09-15T06:00:00.000Z'), /Reset passed/);
+
+  quota.state.me = { csrfToken: 'test' };
+  quota.state.tab = 'providers';
+  quota.state.quotas = {
+    account: { quotas: { session: { resetAt: '2026-09-15T06:07:20.000Z' } } },
+  };
+  quota.scheduleQuotaRefresh();
+  assert.equal(quota.scheduledDelay(), 25_000);
 });
 
 test('the portal ships English copy only and a persisted theme toggle', () => {
