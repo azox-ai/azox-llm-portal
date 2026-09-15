@@ -36,6 +36,10 @@ export function migrate(db) {
     addColumn(db, 'provider_accounts', 'last_refresh_error', 'TEXT');
   }
 
+  if (tableExists(db, 'oauth_states')) {
+    addColumn(db, 'oauth_states', 'account_id', 'INTEGER REFERENCES provider_accounts(id) ON DELETE CASCADE');
+  }
+
   if (tableExists(db, 'router_connections')) {
     addColumn(db, 'router_connections', 'synced_token_version', 'INTEGER NOT NULL DEFAULT 0');
   }

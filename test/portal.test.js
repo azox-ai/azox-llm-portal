@@ -1,7 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { DatabaseSync } from 'node:sqlite';
 import { RouterAdapter } from '../src/adapters/router-adapter.js';
-import { encryptJson } from '../src/lib/crypto.js';
+import { migrate } from '../src/db/migrate.js';
+import { decryptJson, encryptJson } from '../src/lib/crypto.js';
 import { hashPassword } from '../src/services/auth.js';
 import { reconcileAccount } from '../src/services/sync.js';
 import { refreshTokenSet, runRefreshTick } from '../src/services/refresh.js';
@@ -19,6 +21,33 @@ async function session(app, db, username, role = 'user') {
   await seedUser(db, username, role);
   return login(app, username);
 }
+
+test('migration adds the Re-auth target to an existing OAuth state table', () => {
+  const db = new DatabaseSync(':memory:');
+  try {
+    db.exec(`
+      PRAGMA foreign_keys = ON;
+      CREATE TABLE users (id INTEGER PRIMARY KEY);
+      CREATE TABLE provider_accounts (id INTEGER PRIMARY KEY);
+      CREATE TABLE oauth_states (
+        state_hash TEXT PRIMARY KEY,
+        user_id INTEGER NOT NULL,
+        provider TEXT NOT NULL,
+        verifier TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+    migrate(db);
+    assert.ok(db.prepare('PRAGMA table_info(oauth_states)').all().some((column) => column.name === 'account_id'));
+    const foreignKey = db.prepare('PRAGMA foreign_key_list(oauth_states)').all()
+      .find((key) => key.from === 'account_id');
+    assert.equal(foreignKey.table, 'provider_accounts');
+    assert.equal(foreignKey.on_delete, 'CASCADE');
+  } finally {
+    db.close();
+  }
+});
 
 test('the login card creates a free username and rejects one already taken', async (t) => {
   const { app, db } = await testApp();
@@ -178,7 +207,7 @@ test('admin resets a chosen password and removes a user from routers first', asy
   assert.equal(db.prepare('SELECT id FROM users WHERE id = ?').get(userId), undefined);
 });
 
-test('users only see provider accounts they own, including administrators', async (t) => {
+test('users see provider accounts they own while administrators see every account', async (t) => {
   const { app, db, config } = await testApp();
   t.after(() => { app.close(); db.close(); });
   const aliceId = await seedUser(db, 'alice');
@@ -191,7 +220,9 @@ test('users only see provider accounts they own, including administrators', asyn
   const alice = await login(app, 'alice');
   const admin = await login(app, 'admin');
   assert.equal((await app.inject({ method: 'GET', url: '/api/accounts', headers: { cookie: alice.cookie } })).json().length, 1);
-  assert.equal((await app.inject({ method: 'GET', url: '/api/accounts', headers: { cookie: admin.cookie } })).json().length, 0);
+  const adminAccounts = (await app.inject({ method: 'GET', url: '/api/accounts', headers: { cookie: admin.cookie } })).json();
+  assert.equal(adminAccounts.length, 1);
+  assert.equal(adminAccounts[0].owner, 'alice');
 });
 
 test('Sponsors groups account rows by owner without exposing credentials', async (t) => {
@@ -406,6 +437,59 @@ test('Claude OAuth mirrors 9Router JSON exchange and keeps state after a rejecte
   assert.equal(exchanges[1].body.code, 'fresh-code');
 });
 
+test('Re-auth updates its explicit account instead of inserting a duplicate', async (t) => {
+  const { app, db, config, adapters } = await testApp({ oauthFetch: {
+    claude: async () => new Response(JSON.stringify({
+      access_token: 'new-access', refresh_token: 'new-refresh', expires_in: 3600,
+    }), { status: 200 }),
+  } });
+  t.after(() => { app.close(); db.close(); });
+  const ownerId = await seedUser(db, 'alice');
+  const accountId = Number(db.prepare(`INSERT INTO provider_accounts
+    (owner_id, provider, upstream_subject, display_name, credential_envelope, token_version, access_expires_at)
+    VALUES (?, 'claude', 'original-subject', 'Claude OAuth account', ?, 7, '2030-01-01T00:00:00.000Z')`)
+    .run(ownerId, encryptJson({ accessToken: 'old-access', refreshToken: 'old-refresh' }, config.encryptionKey)).lastInsertRowid);
+  const auth = await login(app, 'alice');
+
+  const started = await app.inject({
+    method: 'POST', url: '/api/oauth/claude/start', headers: authHeaders(auth), payload: { accountId },
+  });
+  assert.equal(started.statusCode, 200);
+  const state = new URL(started.json().url).searchParams.get('state');
+  assert.equal(db.prepare('SELECT account_id FROM oauth_states').get().account_id, accountId);
+
+  const completed = await app.inject({
+    method: 'POST', url: '/api/oauth/claude/complete', headers: authHeaders(auth),
+    payload: { callback: `fresh-code#${state}` },
+  });
+  assert.equal(completed.statusCode, 200);
+  assert.equal(completed.json().accountId, accountId);
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM provider_accounts WHERE provider = 'claude'").get().n, 1);
+  const updated = db.prepare('SELECT * FROM provider_accounts WHERE id = ?').get(accountId);
+  assert.equal(updated.upstream_subject, 'original-subject');
+  assert.equal(updated.token_version, 8);
+  assert.equal(decryptJson(updated.credential_envelope, config.encryptionKey).accessToken, 'new-access');
+  assert.deepEqual(adapters.ninerouter.calls.at(-1).slice(0, 2), ['sync', accountId]);
+  assert.deepEqual(adapters.omniroute.calls.at(-1).slice(0, 2), ['sync', accountId]);
+});
+
+test('another user cannot target Re-auth for an account they do not own', async (t) => {
+  const { app, db, config } = await testApp();
+  t.after(() => { app.close(); db.close(); });
+  const aliceId = await seedUser(db, 'alice');
+  await seedUser(db, 'bob');
+  const accountId = Number(db.prepare(`INSERT INTO provider_accounts
+    (owner_id, provider, upstream_subject, display_name, credential_envelope)
+    VALUES (?, 'claude', 'existing-subject', 'Claude OAuth account', ?)`)
+    .run(aliceId, encryptJson({ accessToken: 'access', refreshToken: 'refresh' }, config.encryptionKey)).lastInsertRowid);
+  const bob = await login(app, 'bob');
+
+  const forbidden = await app.inject({
+    method: 'POST', url: '/api/oauth/claude/start', headers: authHeaders(bob), payload: { accountId },
+  });
+  assert.equal(forbidden.statusCode, 404);
+});
+
 test('bodyless POST actions are accepted by the API', async (t) => {
   const { app, db } = await testApp();
   t.after(() => { app.close(); db.close(); });
@@ -421,20 +505,78 @@ test('bodyless POST actions are accepted by the API', async (t) => {
 });
 
 test('Quota Tracker is GET-only and cannot mutate provider state', async (t) => {
+  let refreshCalls = 0;
   const { app, db, config } = await testApp({ oauthFetch: {
+    claude: async () => {
+      refreshCalls += 1;
+      return new Response(JSON.stringify({ access_token: 'rotated', expires_in: 3600 }), { status: 200 });
+    },
     claudeQuota: async () => new Response(JSON.stringify({ five_hour: { utilization: 25, resets_at: '2030-01-01T00:00:00Z' } }), { status: 200 }),
   } });
   t.after(() => { app.close(); db.close(); });
   const ownerId = await seedUser(db, 'alice');
   const result = db.prepare(`INSERT INTO provider_accounts
     (owner_id, provider, upstream_subject, display_name, credential_envelope, access_expires_at)
-    VALUES (?, 'claude', 'sub', 'Claude', ?, '2030-01-01T00:00:00.000Z')`)
-    .run(ownerId, encryptJson({ accessToken: 'a', refreshToken: 'r', expiresAt: '2030-01-01T00:00:00.000Z' }, config.encryptionKey));
+    VALUES (?, 'claude', 'sub', 'Claude', ?, ?)`)
+    .run(
+      ownerId,
+      encryptJson({ accessToken: 'a', refreshToken: 'r' }, config.encryptionKey),
+      new Date(Date.now() + 60_000).toISOString(),
+    );
   const auth = await login(app, 'alice');
   const quota = await app.inject({ method: 'GET', url: `/api/accounts/${result.lastInsertRowid}/quota`, headers: { cookie: auth.cookie } });
   assert.equal(quota.statusCode, 200);
   assert.equal(quota.json().quotas.session.remaining, 75);
+  assert.equal(refreshCalls, 0);
+  assert.equal(db.prepare('SELECT token_version FROM provider_accounts WHERE id = ?').get(result.lastInsertRowid).token_version, 1);
   assert.equal((await app.inject({ method: 'POST', url: `/api/accounts/${result.lastInsertRowid}/quota`, headers: authHeaders(auth) })).statusCode, 404);
+});
+
+test('quota uses the credential belonging to the requested account and admins can inspect every owner', async (t) => {
+  const { app, db, config } = await testApp({ oauthFetch: {
+    claudeQuota: async (_url, init) => {
+      const used = init.headers.authorization === 'Bearer alice-access' ? 0 : 100;
+      return new Response(JSON.stringify({
+        five_hour: { utilization: used, resets_at: '2030-01-01T00:00:00Z' },
+      }), { status: 200 });
+    },
+  } });
+  t.after(() => { app.close(); db.close(); });
+  const aliceId = await seedUser(db, 'alice');
+  const bobId = await seedUser(db, 'bob');
+  const admin = await session(app, db, 'admin', 'admin');
+  const insert = db.prepare(`INSERT INTO provider_accounts
+    (owner_id, provider, upstream_subject, display_name, credential_envelope, access_expires_at)
+    VALUES (?, 'claude', ?, ?, ?, '2030-01-01T00:00:00.000Z')`);
+  const aliceAccount = Number(insert.run(
+    aliceId,
+    'alice-subject',
+    'Alice Claude',
+    encryptJson({ accessToken: 'alice-access' }, config.encryptionKey),
+  ).lastInsertRowid);
+  const bobAccount = Number(insert.run(
+    bobId,
+    'bob-subject',
+    'Bob Claude',
+    encryptJson({ accessToken: 'bob-access' }, config.encryptionKey),
+  ).lastInsertRowid);
+
+  const aliceQuota = await app.inject({
+    method: 'GET', url: `/api/accounts/${aliceAccount}/quota`, headers: { cookie: admin.cookie },
+  });
+  const bobQuota = await app.inject({
+    method: 'GET', url: `/api/accounts/${bobAccount}/quota`, headers: { cookie: admin.cookie },
+  });
+  assert.equal(aliceQuota.statusCode, 200);
+  assert.equal(aliceQuota.json().quotas.session.remaining, 100);
+  assert.equal(bobQuota.statusCode, 200);
+  assert.equal(bobQuota.json().quotas.session.remaining, 0);
+
+  const alice = await login(app, 'alice');
+  const forbidden = await app.inject({
+    method: 'GET', url: `/api/accounts/${bobAccount}/quota`, headers: { cookie: alice.cookie },
+  });
+  assert.equal(forbidden.statusCode, 404);
 });
 
 test('refresh tick keeps a minimum gap between two refreshes of the same account', async (t) => {

@@ -6,12 +6,14 @@ export function validPassword(value) {
   return typeof value === 'string' && value.length >= 12 && value.length <= 256;
 }
 
-export function ownAccount(db, accountId, user) {
-  return db.prepare(`
+export function accountForUser(db, accountId, user) {
+  const account = db.prepare(`
     SELECT a.*, u.username AS owner_username
     FROM provider_accounts a JOIN users u ON u.id = a.owner_id
-    WHERE a.id = ? AND a.owner_id = ?
-  `).get(accountId, user.id);
+    WHERE a.id = ?
+  `).get(accountId);
+  if (!account) return undefined;
+  return user.role === 'admin' || account.owner_id === user.id ? account : undefined;
 }
 
 export function safeError(error) {
