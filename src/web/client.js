@@ -15,11 +15,14 @@ const state = {
   passwordError: null,
   loginError: null,
   loginNotice: null,
+  quotaRefreshTimer: null,
 };
 
 const $ = (id) => document.getElementById(id);
 
 const THEME_KEY = 'portal-theme';
+const QUOTA_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
+const QUOTA_POST_RESET_DELAY_MS = 5 * 1000;
 
 function storedTheme() {
   try { return localStorage.getItem(THEME_KEY); } catch { return null; }
@@ -88,6 +91,27 @@ async function loadQuotas() {
     }
   }));
   render();
+  scheduleQuotaRefresh();
+}
+
+function scheduleQuotaRefresh() {
+  if (state.quotaRefreshTimer) {
+    clearTimeout(state.quotaRefreshTimer);
+    state.quotaRefreshTimer = null;
+  }
+  if (!state.me || state.tab !== 'providers') return;
+
+  const now = Date.now();
+  const resetTimes = Object.values(state.quotas)
+    .flatMap((quota) => Object.values(quota?.quotas || {}))
+    .map((quota) => Date.parse(quota?.resetAt || ''))
+    .filter(Number.isFinite);
+  const nextReset = resetTimes.length ? Math.min(...resetTimes) : NaN;
+  const delay = Number.isFinite(nextReset) && nextReset > now
+    ? Math.min(QUOTA_REFRESH_INTERVAL_MS, Math.max(QUOTA_POST_RESET_DELAY_MS, nextReset - now + QUOTA_POST_RESET_DELAY_MS))
+    : QUOTA_REFRESH_INTERVAL_MS;
+
+  state.quotaRefreshTimer = setTimeout(() => loadQuotas(), delay);
 }
 
 async function loadSponsors() {
@@ -174,11 +198,32 @@ function quotaStrip(account) {
   if (!entries.length) return '<div class="quota-inline"><span class="quota-hint">Upstream returned no quota window.</span></div>';
   // Two windows split the row evenly so the strip lines up with the table above.
   return '<div class="quota-inline">' +
-    entries.map(([name, value]) => '<span class="quota-chip"><b>' + esc(name === 'session' ? 'session' : name) + '</b>' +
-      '<i>' + Math.round(value.remaining) + '% remaining</i>' +
+    entries.map(([name, value]) => '<span class="quota-chip"><b>' + esc(quotaName(name)) + '</b>' +
+      '<i>' + quotaPercent(value.remaining) + ' remaining</i>' +
       '<span class="progress"><span style="width:' + Math.max(0, Math.min(100, value.remaining)) + '%"></span></span>' +
-      '<small>Reset: ' + (value.resetAt ? new Date(value.resetAt).toLocaleString() : '—') + '</small></span>').join('') +
+      '<small>' + quotaResetLabel(value.resetAt) + '</small></span>').join('') +
     '</div>';
+}
+
+function quotaName(name) {
+  if (name === 'session') return 'Session (5h)';
+  if (name === 'weekly') return 'Weekly (7d)';
+  return name;
+}
+
+function quotaPercent(value) {
+  const percent = Number(value);
+  if (!Number.isFinite(percent)) return '—';
+  if (percent > 0 && percent < 1) return '<1%';
+  return Math.round(Math.max(0, Math.min(100, percent))) + '%';
+}
+
+function quotaResetLabel(resetAt) {
+  if (!resetAt) return 'Reset: —';
+  const resetMs = Date.parse(resetAt);
+  if (!Number.isFinite(resetMs)) return 'Reset: —';
+  if (resetMs <= Date.now()) return 'Reset passed · refreshing within 5 min';
+  return 'Reset: ' + new Date(resetMs).toLocaleString();
 }
 
 function sponsorsView() {
@@ -294,6 +339,7 @@ async function selectTab(tab) {
   if (tab === 'audit') await loadAudit();
   if (tab === 'sponsors') await loadSponsors();
   render();
+  scheduleQuotaRefresh();
   if (tab === 'providers') loadQuotas();
 }
 
