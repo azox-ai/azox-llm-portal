@@ -179,7 +179,7 @@ function providersView() {
     '<button data-reauth="' + account.id + '" data-provider="' + esc(account.provider) + '">Re-auth</button>' +
     '<button class="danger" data-remove-account="' + account.id + '">Delete</button></td></tr>' +
     // Quota Tracker lives here now: the same row it belongs to, read-only.
-    '<tr class="quota-row"><td colspan="7">' + quotaStrip(account) + '</td></tr>').join('');
+    quotaRow(account)).join('');
   const missingRouters = ['ninerouter', 'omniroute'].filter((router) => !state.routers[router]?.configured);
   return (missingRouters.length ? '<div class="notice bad">Router sync is not configured: ' + esc(missingRouters.join(', ')) + '.</div>' : '') +
     '<div class="panel"><div class="panel-head"><div><h2>Add provider</h2></div></div>' +
@@ -191,11 +191,16 @@ function providersView() {
       '<div class="empty">No provider connections yet.</div>') + '</div>';
 }
 
+function quotaRow(account) {
+  const content = quotaStrip(account);
+  return content ? '<tr class="quota-row"><td colspan="7">' + content + '</td></tr>' : '';
+}
+
 function quotaStrip(account) {
   const quota = state.quotas[account.id];
   if (!quota) return '<div class="quota-inline"><span class="quota-hint">Loading quota…</span></div>';
   const entries = Object.entries(quota.quotas || {});
-  if (!entries.length) return '<div class="quota-inline"><span class="quota-hint">Upstream returned no quota window.</span></div>';
+  if (!entries.length) return '';
   // Two windows split the row evenly so the strip lines up with the table above.
   return '<div class="quota-inline">' +
     entries.map(([name, value]) => '<span class="quota-chip"><b>' + esc(quotaName(name)) + '</b>' +

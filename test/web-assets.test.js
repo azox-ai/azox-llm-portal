@@ -20,7 +20,7 @@ function quotaClientHelpers(now) {
     setTimeout(_callback, delay) { scheduledDelay = delay; return 1; },
   });
   new vm.Script(appScript.slice(0, initStart) +
-    ';globalThis.quotaTest = { state, quotaName, quotaPercent, quotaResetLabel, scheduleQuotaRefresh };')
+    ';globalThis.quotaTest = { state, quotaName, quotaPercent, quotaResetLabel, quotaRow, scheduleQuotaRefresh };')
     .runInContext(context);
   return {
     ...context.quotaTest,
@@ -94,6 +94,13 @@ test('quota UI refreshes after reset and labels stale snapshots', () => {
   };
   quota.scheduleQuotaRefresh();
   assert.equal(quota.scheduledDelay(), 25_000);
+});
+
+test('quota UI hides an account quota row when upstream returns no windows', () => {
+  const quota = quotaClientHelpers(Date.parse('2026-09-15T06:07:00.000Z'));
+  quota.state.quotas = { 2: { plan: 'Claude', quotas: {} } };
+  assert.equal(quota.quotaRow({ id: 2 }), '');
+  assert.doesNotMatch(appScript, /Upstream returned no quota window/);
 });
 
 test('the portal ships English copy only and a persisted theme toggle', () => {
