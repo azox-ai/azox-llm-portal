@@ -364,6 +364,42 @@ test('refresh tick honors the configured lead boundary and live admin setting', 
   assert.equal(db.prepare('SELECT token_version FROM provider_accounts WHERE id = ?').get(atTenHours).token_version, 2);
 });
 
+test('refresh lead is capped to one quarter of the observed token lifetime', async (t) => {
+  const now = Date.parse('2030-01-01T00:00:00.000Z');
+  const refreshCalls = [];
+  const { app, db, config, adapters } = await testApp({ config: { refreshLeadMinutes: 480 } });
+  t.after(() => { app.close(); db.close(); });
+  const ownerId = await seedUser(db, 'lifetime-owner');
+
+  const accountId = Number(db.prepare(`
+    INSERT INTO provider_accounts
+      (owner_id, provider, upstream_subject, display_name, credential_envelope, access_expires_at, last_refresh_at)
+    VALUES (?, 'claude', 'eight-hour-subject', 'eight-hour-subject', ?, ?, ?)
+  `).run(
+    ownerId,
+    encryptJson({ accessToken: 'old', refreshToken: 'refresh-eight-hour' }, config.encryptionKey),
+    new Date(now + 8 * 60 * 60_000).toISOString(),
+    new Date(now).toISOString(),
+  ).lastInsertRowid);
+
+  const refreshFetch = async (_url, options) => {
+    refreshCalls.push(JSON.parse(options.body).refresh_token);
+    return new Response(JSON.stringify({ access_token: 'new-access', expires_in: 8 * 60 * 60 }), { status: 200 });
+  };
+
+  // A configured 8-hour lead on an 8-hour token is capped at 2 hours, so a
+  // freshly issued token must not refresh immediately after the 10-minute gap.
+  assert.equal(await runRefreshTick(db, adapters, config, refreshFetch, now + 11 * 60_000), 0);
+  assert.deepEqual(refreshCalls, []);
+  assert.equal(db.prepare('SELECT token_version FROM provider_accounts WHERE id = ?').get(accountId).token_version, 1);
+
+  // The account becomes eligible once it reaches the final quarter of the
+  // observed token lifetime.
+  assert.equal(await runRefreshTick(db, adapters, config, refreshFetch, now + 6 * 60 * 60_000), 1);
+  assert.deepEqual(refreshCalls, ['refresh-eight-hour']);
+  assert.equal(db.prepare('SELECT token_version FROM provider_accounts WHERE id = ?').get(accountId).token_version, 2);
+});
+
 test('Codex quota converts epoch-second reset_at instead of rendering 1970', async () => {
   const quota = await fetchQuota('codex', { accessToken: 'token' }, async () => new Response(JSON.stringify({
     plan_type: 'plus',
@@ -593,7 +629,7 @@ test('refresh tick keeps a minimum gap between two refreshes of the same account
   `).run(
     ownerId,
     encryptJson({ accessToken: 'old', refreshToken: 'refresh-gap' }, config.encryptionKey),
-    new Date(now + 30 * 60_000).toISOString(),
+    new Date(now + 8 * 60_000).toISOString(),
     new Date(now - 4 * 60_000).toISOString(),
   ).lastInsertRowid);
 

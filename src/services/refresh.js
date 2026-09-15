@@ -4,6 +4,16 @@ import { reconcileAccount } from './sync.js';
 import { getRefreshLeadMs } from './settings.js';
 
 export const MIN_REFRESH_GAP_MS = 10 * 60_000;
+export const MAX_REFRESH_LEAD_LIFETIME_RATIO = 0.25;
+
+function effectiveRefreshLeadMs(configuredLeadMs, accessExpiresAt, lastRefreshAt) {
+  if (!lastRefreshAt) return configuredLeadMs;
+  const expiresAtMs = Date.parse(accessExpiresAt);
+  const lastRefreshAtMs = Date.parse(lastRefreshAt.endsWith('Z') ? lastRefreshAt : `${lastRefreshAt}Z`);
+  const observedLifetimeMs = expiresAtMs - lastRefreshAtMs;
+  if (!Number.isFinite(observedLifetimeMs) || observedLifetimeMs <= 0) return configuredLeadMs;
+  return Math.min(configuredLeadMs, observedLifetimeMs * MAX_REFRESH_LEAD_LIFETIME_RATIO);
+}
 
 function refreshRequest(provider, providerConfig, refreshToken) {
   const values = {
@@ -70,15 +80,24 @@ export async function refreshAccount(db, adapters, config, accountId, fetchImpl 
 
 export async function runRefreshTick(db, adapters, config, fetchImpl = fetch, now = Date.now()) {
   // Read the setting on every tick so admin changes apply without a restart.
-  const cutoff = new Date(now + getRefreshLeadMs(db, config)).toISOString();
+  const configuredLeadMs = getRefreshLeadMs(db, config);
   const lastEligibleRefresh = new Date(now - MIN_REFRESH_GAP_MS).toISOString();
-  const accounts = db.prepare(`
-    SELECT id FROM provider_accounts
+  const candidates = db.prepare(`
+    SELECT id, access_expires_at, last_refresh_at FROM provider_accounts
     WHERE credential_status = 'active'
       AND access_expires_at IS NOT NULL
-      AND access_expires_at <= ?
       AND (last_refresh_at IS NULL OR datetime(last_refresh_at) <= datetime(?))
-  `).all(cutoff, lastEligibleRefresh);
+  `).all(lastEligibleRefresh);
+  const accounts = candidates.filter((account) => {
+    const expiresAtMs = Date.parse(account.access_expires_at);
+    if (!Number.isFinite(expiresAtMs)) return false;
+    const leadMs = effectiveRefreshLeadMs(
+      configuredLeadMs,
+      account.access_expires_at,
+      account.last_refresh_at,
+    );
+    return expiresAtMs <= now + leadMs;
+  });
   for (const account of accounts) {
     try { await refreshAccount(db, adapters, config, account.id, fetchImpl); }
     catch { /* recorded on the account; one failure must not block the others */ }
