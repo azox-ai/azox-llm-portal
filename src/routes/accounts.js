@@ -3,7 +3,7 @@ import { createVerifier } from '../oauth/pkce.js';
 import {
   buildAuthorizeUrl, exchangeCode, resolveIdentity, parseCallbackInput,
 } from '../oauth/client.js';
-import { ownAccount } from '../lib/validation.js';
+import { accountForUser } from '../lib/validation.js';
 import { audit } from '../services/audit.js';
 import {
   ROUTERS, aggregateStatus, markPending, pullRouterState, reconcileAccount, removeAccount,
@@ -36,7 +36,7 @@ export default async function accountRoutes(app, { db, config, adapters, oauthFe
       const identity = await resolveIdentity(providerConfig, tokenSet, fetchImpl);
       const duplicate = db.prepare('SELECT id, owner_id FROM provider_accounts WHERE provider = ? AND upstream_subject = ?')
         .get(provider, identity.subject);
-      if (duplicate && duplicate.owner_id !== request.user.id) {
+      if (duplicate && duplicate.owner_id !== request.user.id && request.user.role !== 'admin') {
         return reply.code(409).send({ error: 'This account is already registered by another user' });
       }
 
@@ -80,14 +80,16 @@ export default async function accountRoutes(app, { db, config, adapters, oauthFe
 
   app.get('/api/accounts', async (request, reply) => {
     if (!request.user) return reply.code(401).send({ error: 'Not authenticated' });
-    const rows = db.prepare(`
+    const ownerFilter = request.user.role === 'admin' ? '' : 'WHERE a.owner_id = ?';
+    const query = db.prepare(`
       SELECT a.id, a.provider, a.display_name, a.desired_enabled, a.credential_status,
              a.access_expires_at, a.last_refresh_at, a.last_refresh_error,
              a.created_at, a.updated_at, u.username AS owner_username
       FROM provider_accounts a JOIN users u ON u.id = a.owner_id
-      WHERE a.owner_id = ?
+      ${ownerFilter}
       ORDER BY a.created_at DESC
-    `).all(request.user.id);
+    `);
+    const rows = request.user.role === 'admin' ? query.all() : query.all(request.user.id);
     const connections = db.prepare(`
       SELECT router, sync_status, last_error, last_synced_at
       FROM router_connections WHERE account_id = ?
@@ -159,7 +161,7 @@ export default async function accountRoutes(app, { db, config, adapters, oauthFe
 
   app.patch('/api/accounts/:id/state', async (request, reply) => {
     if (!request.user) return reply.code(401).send({ error: 'Not authenticated' });
-    const account = ownAccount(db, request.params.id, request.user);
+    const account = accountForUser(db, request.params.id, request.user);
     if (!account) return reply.code(404).send({ error: 'Account not found' });
     if (typeof request.body?.enabled !== 'boolean') {
       return reply.code(400).send({ error: 'enabled must be a boolean' });
@@ -180,18 +182,18 @@ export default async function accountRoutes(app, { db, config, adapters, oauthFe
 
   app.post('/api/accounts/:id/retry', async (request, reply) => {
     if (!request.user) return reply.code(401).send({ error: 'Not authenticated' });
-    const account = ownAccount(db, request.params.id, request.user);
+    const account = accountForUser(db, request.params.id, request.user);
     if (!account) return reply.code(404).send({ error: 'Account not found' });
     return reply.send({ ok: true, routers: await pullRouterState(db, adapters, account.id) });
   });
 
   // Quota Tracker is deliberately read-only. It has only GET routes; account
-  // state changes remain in the Providers surface and are owner-scoped.
+  // state changes remain in the Providers surface. Users can read their own
+  // quota while administrators can inspect every account they operate.
   app.get('/api/accounts/:id/quota', async (request, reply) => {
     if (!request.user) return reply.code(401).send({ error: 'Not authenticated' });
-    const account = ownAccount(db, request.params.id, request.user);
+    const account = accountForUser(db, request.params.id, request.user);
     if (!account) return reply.code(404).send({ error: 'Account not found' });
-    if (account.owner_id !== request.user.id) return reply.code(404).send({ error: 'Account not found' });
     try {
       const expiresAt = Date.parse(account.access_expires_at || '');
       if (Number.isFinite(expiresAt) && expiresAt <= Date.now() + getRefreshLeadMs(db, config)) {
@@ -211,7 +213,7 @@ export default async function accountRoutes(app, { db, config, adapters, oauthFe
 
   app.delete('/api/accounts/:id', async (request, reply) => {
     if (!request.user) return reply.code(401).send({ error: 'Not authenticated' });
-    const account = ownAccount(db, request.params.id, request.user);
+    const account = accountForUser(db, request.params.id, request.user);
     if (!account) return reply.code(404).send({ error: 'Account not found' });
     // Fail closed: preserve the portal record and credential until every router
     // confirms deletion, otherwise an orphaned active connection becomes invisible.

@@ -10,7 +10,8 @@ Internal account portal for the `llm-gateway` Docker stack.
   password, disable/enable, and remove a user with its router connections.
 - Login has two tabs like 9Router: username/password for users, and an
   admin-password form that signs in as `INIT_ADMIN_USERNAME`.
-- Provider accounts are strictly owner-scoped, including for administrators.
+- Provider accounts are owner-scoped for regular users. Administrators can
+  inspect and operate every provider account.
 - Account labels are the full upstream email or account name, unmasked, and
   every surface shows `Sponsored by: <portal user>` beneath it.
 - Quota Tracker reads upstream quota and exposes no state-changing actions.

@@ -178,7 +178,7 @@ test('admin resets a chosen password and removes a user from routers first', asy
   assert.equal(db.prepare('SELECT id FROM users WHERE id = ?').get(userId), undefined);
 });
 
-test('users only see provider accounts they own, including administrators', async (t) => {
+test('users see provider accounts they own while administrators see every account', async (t) => {
   const { app, db, config } = await testApp();
   t.after(() => { app.close(); db.close(); });
   const aliceId = await seedUser(db, 'alice');
@@ -191,7 +191,9 @@ test('users only see provider accounts they own, including administrators', asyn
   const alice = await login(app, 'alice');
   const admin = await login(app, 'admin');
   assert.equal((await app.inject({ method: 'GET', url: '/api/accounts', headers: { cookie: alice.cookie } })).json().length, 1);
-  assert.equal((await app.inject({ method: 'GET', url: '/api/accounts', headers: { cookie: admin.cookie } })).json().length, 0);
+  const adminAccounts = (await app.inject({ method: 'GET', url: '/api/accounts', headers: { cookie: admin.cookie } })).json();
+  assert.equal(adminAccounts.length, 1);
+  assert.equal(adminAccounts[0].owner, 'alice');
 });
 
 test('Sponsors groups account rows by owner without exposing credentials', async (t) => {
@@ -435,6 +437,53 @@ test('Quota Tracker is GET-only and cannot mutate provider state', async (t) => 
   assert.equal(quota.statusCode, 200);
   assert.equal(quota.json().quotas.session.remaining, 75);
   assert.equal((await app.inject({ method: 'POST', url: `/api/accounts/${result.lastInsertRowid}/quota`, headers: authHeaders(auth) })).statusCode, 404);
+});
+
+test('quota uses the credential belonging to the requested account and admins can inspect every owner', async (t) => {
+  const { app, db, config } = await testApp({ oauthFetch: {
+    claudeQuota: async (_url, init) => {
+      const used = init.headers.authorization === 'Bearer alice-access' ? 0 : 100;
+      return new Response(JSON.stringify({
+        five_hour: { utilization: used, resets_at: '2030-01-01T00:00:00Z' },
+      }), { status: 200 });
+    },
+  } });
+  t.after(() => { app.close(); db.close(); });
+  const aliceId = await seedUser(db, 'alice');
+  const bobId = await seedUser(db, 'bob');
+  const admin = await session(app, db, 'admin', 'admin');
+  const insert = db.prepare(`INSERT INTO provider_accounts
+    (owner_id, provider, upstream_subject, display_name, credential_envelope, access_expires_at)
+    VALUES (?, 'claude', ?, ?, ?, '2030-01-01T00:00:00.000Z')`);
+  const aliceAccount = Number(insert.run(
+    aliceId,
+    'alice-subject',
+    'Alice Claude',
+    encryptJson({ accessToken: 'alice-access' }, config.encryptionKey),
+  ).lastInsertRowid);
+  const bobAccount = Number(insert.run(
+    bobId,
+    'bob-subject',
+    'Bob Claude',
+    encryptJson({ accessToken: 'bob-access' }, config.encryptionKey),
+  ).lastInsertRowid);
+
+  const aliceQuota = await app.inject({
+    method: 'GET', url: `/api/accounts/${aliceAccount}/quota`, headers: { cookie: admin.cookie },
+  });
+  const bobQuota = await app.inject({
+    method: 'GET', url: `/api/accounts/${bobAccount}/quota`, headers: { cookie: admin.cookie },
+  });
+  assert.equal(aliceQuota.statusCode, 200);
+  assert.equal(aliceQuota.json().quotas.session.remaining, 100);
+  assert.equal(bobQuota.statusCode, 200);
+  assert.equal(bobQuota.json().quotas.session.remaining, 0);
+
+  const alice = await login(app, 'alice');
+  const forbidden = await app.inject({
+    method: 'GET', url: `/api/accounts/${bobAccount}/quota`, headers: { cookie: alice.cookie },
+  });
+  assert.equal(forbidden.statusCode, 404);
 });
 
 test('refresh tick keeps a minimum gap between two refreshes of the same account', async (t) => {
