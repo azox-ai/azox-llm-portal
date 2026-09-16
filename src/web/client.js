@@ -230,14 +230,15 @@ function quotaStrip(account) {
   if (!entries.length) return '<div class="quota-inline"><span class="quota-hint">Upstream returned no quota window.</span></div>';
   // Two windows split the row evenly so the strip lines up with the table above.
   return '<div class="quota-inline">' +
-    entries.map(([name, value]) => '<span class="quota-chip"><b>' + esc(quotaName(name)) + '</b>' +
+    entries.map(([name, value]) => '<span class="quota-chip"><b>' + esc(quotaName(name, account.provider, quota.plan)) + '</b>' +
       '<i>' + quotaPercent(value.remaining) + ' remaining</i>' +
       '<span class="progress"><span style="width:' + Math.max(0, Math.min(100, value.remaining)) + '%"></span></span>' +
       '<small>' + quotaResetLabel(value.resetAt) + '</small></span>').join('') +
     '</div>';
 }
 
-function quotaName(name) {
+function quotaName(name, provider, plan) {
+  if (name === 'session' && provider === 'codex' && String(plan || '').trim().toLowerCase() === 'pro') return 'Session (7d)';
   if (name === 'session') return 'Session (5h)';
   if (name === 'weekly') return 'Weekly (7d)';
   return name;

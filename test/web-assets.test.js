@@ -94,7 +94,10 @@ test('client bundle parses and merges quota into the providers surface', () => {
 test('quota UI refreshes after reset and labels stale snapshots', () => {
   const now = Date.parse('2026-09-15T06:07:00.000Z');
   const quota = quotaClientHelpers(now);
-  assert.equal(quota.quotaName('session'), 'Session (5h)');
+  assert.equal(quota.quotaName('session', 'claude', 'max'), 'Session (5h)');
+  assert.equal(quota.quotaName('session', 'codex', 'plus'), 'Session (5h)');
+  assert.equal(quota.quotaName('session', 'codex', 'pro'), 'Session (7d)');
+  assert.equal(quota.quotaName('weekly', 'codex', 'pro'), 'Weekly (7d)');
   assert.equal(quota.quotaPercent(0.4), '<1%');
   assert.match(quota.quotaResetLabel('2026-09-15T06:00:00.000Z'), /Reset passed/);
 
