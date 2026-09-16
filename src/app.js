@@ -18,6 +18,7 @@ import { startRefreshScheduler } from './services/refresh.js';
 import { restoreFullAccountLabels } from './services/sync.js';
 
 const MUTATING = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+const THEME_BOOTSTRAP_HASH = "'sha256-nazoARPAa07X5Va4zwQ0fEvL8yyU99JAa/DSXxMpIz0='";
 
 export async function buildApp(options = {}) {
   const config = options.config || loadConfig();
@@ -42,12 +43,12 @@ export async function buildApp(options = {}) {
         formAction: ["'self'"],
         frameAncestors: ["'none'"],
         objectSrc: ["'none'"],
-        scriptSrc: ["'self'"],
+        scriptSrc: ["'self'", THEME_BOOTSTRAP_HASH, 'https://static.cloudflareinsights.com'],
         scriptSrcAttr: ["'none'"],
         styleSrc: ["'self'", "'unsafe-inline'"],
         imgSrc: ["'self'", 'data:'],
         fontSrc: ["'self'", 'data:'],
-        connectSrc: ["'self'"],
+        connectSrc: ["'self'", 'https://cloudflareinsights.com'],
         ...(config.tls ? { upgradeInsecureRequests: [] } : {}),
       },
     },

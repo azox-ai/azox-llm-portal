@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import vm from 'node:vm';
 import { appScript } from '../src/web/client.js';
 import { styles } from '../src/web/styles.js';
@@ -175,4 +176,20 @@ test('plain HTTP mode does not tell browsers to upgrade assets to HTTPS', async 
   const response = await app.inject({ method: 'GET', url: '/' });
   assert.equal(response.statusCode, 200);
   assert.doesNotMatch(response.headers['content-security-policy'], /upgrade-insecure-requests/);
+});
+
+test('content security policy permits the exact theme bootstrap and Cloudflare Insights', async (t) => {
+  const { app, db } = await testApp();
+  t.after(() => { app.close(); db.close(); });
+
+  const inlineScript = renderApp().match(/<script>([\s\S]*?)<\/script>/)?.[1];
+  assert.ok(inlineScript, 'theme bootstrap script must exist');
+  const scriptHash = `'sha256-${createHash('sha256').update(inlineScript).digest('base64')}'`;
+
+  const response = await app.inject({ method: 'GET', url: '/' });
+  const csp = response.headers['content-security-policy'];
+  assert.ok(csp.includes(scriptHash));
+  assert.match(csp, /script-src [^;]*https:\/\/static\.cloudflareinsights\.com/);
+  assert.match(csp, /connect-src [^;]*https:\/\/cloudflareinsights\.com/);
+  assert.doesNotMatch(csp, /script-src [^;]*'unsafe-inline'/);
 });
