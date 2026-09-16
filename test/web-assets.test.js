@@ -29,6 +29,16 @@ function quotaClientHelpers(now) {
   };
 }
 
+function navigationClientHelpers() {
+  const initStart = appScript.indexOf('(async function init()');
+  assert.notEqual(initStart, -1, 'client startup marker must exist');
+  const context = vm.createContext({});
+  new vm.Script(appScript.slice(0, initStart) +
+    ';globalThis.navigationTest = { tabFromPath, pathForTab };')
+    .runInContext(context);
+  return context.navigationTest;
+}
+
 test('client bundle parses and merges quota into the providers surface', () => {
   assert.doesNotThrow(() => new vm.Script(appScript));
   for (const label of ['Providers', 'Sponsors', 'Admin', 'Audit log']) assert.match(appScript, new RegExp(label));
@@ -114,6 +124,19 @@ test('the portal ships English copy only and a persisted theme toggle', () => {
   assert.match(appScript, /localStorage\.setItem\(THEME_KEY/);
 });
 
+test('navigator maps each tab to a stable, deep-linkable path', () => {
+  const navigation = navigationClientHelpers();
+  assert.equal(navigation.tabFromPath('/providers'), 'providers');
+  assert.equal(navigation.tabFromPath('/sponsors'), 'sponsors');
+  assert.equal(navigation.tabFromPath('/admin'), 'admin');
+  assert.equal(navigation.tabFromPath('/audit'), 'audit');
+  assert.equal(navigation.tabFromPath('/unknown'), null);
+  assert.equal(navigation.pathForTab('audit'), '/audit');
+  assert.equal(navigation.pathForTab('unknown'), '/providers');
+  assert.match(appScript, /history\[replace \? 'replaceState' : 'pushState'\]/);
+  assert.match(appScript, /addEventListener\('popstate'/);
+});
+
 test('served assets contain the 9Router-inspired portal shell', () => {
   assert.match(renderApp(), /<aside class="sidebar">/);
   assert.match(renderApp(), /id="modal-root"/);
@@ -157,6 +180,12 @@ test('fingerprinted assets prevent stale deploys and expose a tab icon', async (
   t.after(() => { app.close(); db.close(); });
   const shell = await app.inject({ method: 'GET', url: '/' });
   assert.equal(shell.headers['cache-control'], NO_STORE_CACHE_CONTROL);
+  for (const path of ['/providers', '/sponsors', '/admin', '/audit']) {
+    const response = await app.inject({ method: 'GET', url: path });
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.headers['cache-control'], NO_STORE_CACHE_CONTROL);
+    assert.match(response.body, new RegExp(assets.script.path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  }
   for (const asset of Object.values(assets)) {
     const response = await app.inject({ method: 'GET', url: asset.path });
     assert.equal(response.statusCode, 200);

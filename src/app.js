@@ -100,10 +100,11 @@ export async function buildApp(options = {}) {
 
   // The shell must never be cached: it is the only document that knows which
   // fingerprinted asset URLs the current build uses.
-  app.get('/', async (_request, reply) => reply
+  const appShell = async (_request, reply) => reply
     .header('cache-control', NO_STORE_CACHE_CONTROL)
     .type('text/html')
-    .send(renderApp()));
+    .send(renderApp());
+  for (const path of ['/', '/providers', '/sponsors', '/admin', '/audit']) app.get(path, appShell);
 
   for (const asset of Object.values(assets)) {
     app.get(asset.path, async (_request, reply) => reply

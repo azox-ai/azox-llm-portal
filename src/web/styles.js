@@ -44,8 +44,9 @@ body.signed-out .workspace{margin-left:0;width:100%}
 .brand-mark{width:34px;height:34px;border-radius:var(--radius);background:var(--brand);color:#fff;display:grid;place-items:center;font-weight:800;box-shadow:var(--shadow-warm)}
 .brand strong{display:block;font-size:14px}
 .brand small{display:block;color:var(--subtle);font-size:10px;letter-spacing:1.2px;text-transform:uppercase}
-.nav-item{display:flex;align-items:center;gap:9px;width:100%;border:0;background:transparent;color:var(--muted);text-align:left;padding:10px 12px;border-radius:var(--radius);margin:2px 0;font-weight:600;font-size:13px;cursor:pointer}
+.nav-item{display:flex;align-items:center;gap:9px;width:100%;border:0;background:transparent;color:var(--muted);text-align:left;padding:10px 12px;border-radius:var(--radius);margin:2px 0;font-weight:600;font-size:13px;cursor:pointer;text-decoration:none}
 .nav-item:hover{background:var(--surface);color:var(--text)}
+.nav-item:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
 .nav-item.active{background:var(--surface);color:var(--brand);box-shadow:var(--shadow-soft)}
 .nav-item .ico{width:18px;text-align:center}
 .sidebar-note{margin-top:auto;display:flex;align-items:center;gap:7px;color:var(--subtle);font-size:11px;padding:8px 6px}
