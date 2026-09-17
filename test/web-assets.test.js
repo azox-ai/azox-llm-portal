@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import vm from 'node:vm';
 import { appScript } from '../src/web/client.js';
 import { styles } from '../src/web/styles.js';
@@ -26,6 +27,16 @@ function quotaClientHelpers(now) {
     ...context.quotaTest,
     scheduledDelay: () => scheduledDelay,
   };
+}
+
+function navigationClientHelpers() {
+  const initStart = appScript.indexOf('(async function init()');
+  assert.notEqual(initStart, -1, 'client startup marker must exist');
+  const context = vm.createContext({});
+  new vm.Script(appScript.slice(0, initStart) +
+    ';globalThis.navigationTest = { tabFromPath, pathForTab };')
+    .runInContext(context);
+  return context.navigationTest;
 }
 
 test('client bundle parses and merges quota into the providers surface', () => {
@@ -83,7 +94,10 @@ test('client bundle parses and merges quota into the providers surface', () => {
 test('quota UI refreshes after reset and labels stale snapshots', () => {
   const now = Date.parse('2026-09-15T06:07:00.000Z');
   const quota = quotaClientHelpers(now);
-  assert.equal(quota.quotaName('session'), 'Session (5h)');
+  assert.equal(quota.quotaName('session', 'claude', 'max'), 'Session (5h)');
+  assert.equal(quota.quotaName('session', 'codex', 'plus'), 'Session (5h)');
+  assert.equal(quota.quotaName('session', 'codex', 'pro'), 'Session (7d)');
+  assert.equal(quota.quotaName('weekly', 'codex', 'pro'), 'Weekly (7d)');
   assert.equal(quota.quotaPercent(0.4), '<1%');
   assert.match(quota.quotaResetLabel('2026-09-15T06:00:00.000Z'), /Reset passed/);
 
@@ -111,6 +125,19 @@ test('the portal ships English copy only and a persisted theme toggle', () => {
   assert.match(appScript, /themeButton/);
   assert.match(appScript, /toggleTheme/);
   assert.match(appScript, /localStorage\.setItem\(THEME_KEY/);
+});
+
+test('navigator maps each tab to a stable, deep-linkable path', () => {
+  const navigation = navigationClientHelpers();
+  assert.equal(navigation.tabFromPath('/providers'), 'providers');
+  assert.equal(navigation.tabFromPath('/sponsors'), 'sponsors');
+  assert.equal(navigation.tabFromPath('/admin'), 'admin');
+  assert.equal(navigation.tabFromPath('/audit'), 'audit');
+  assert.equal(navigation.tabFromPath('/unknown'), null);
+  assert.equal(navigation.pathForTab('audit'), '/audit');
+  assert.equal(navigation.pathForTab('unknown'), '/providers');
+  assert.match(appScript, /history\[replace \? 'replaceState' : 'pushState'\]/);
+  assert.match(appScript, /addEventListener\('popstate'/);
 });
 
 test('served assets contain the 9Router-inspired portal shell', () => {
@@ -156,6 +183,12 @@ test('fingerprinted assets prevent stale deploys and expose a tab icon', async (
   t.after(() => { app.close(); db.close(); });
   const shell = await app.inject({ method: 'GET', url: '/' });
   assert.equal(shell.headers['cache-control'], NO_STORE_CACHE_CONTROL);
+  for (const path of ['/providers', '/sponsors', '/admin', '/audit']) {
+    const response = await app.inject({ method: 'GET', url: path });
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.headers['cache-control'], NO_STORE_CACHE_CONTROL);
+    assert.match(response.body, new RegExp(assets.script.path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  }
   for (const asset of Object.values(assets)) {
     const response = await app.inject({ method: 'GET', url: asset.path });
     assert.equal(response.statusCode, 200);
@@ -175,4 +208,20 @@ test('plain HTTP mode does not tell browsers to upgrade assets to HTTPS', async 
   const response = await app.inject({ method: 'GET', url: '/' });
   assert.equal(response.statusCode, 200);
   assert.doesNotMatch(response.headers['content-security-policy'], /upgrade-insecure-requests/);
+});
+
+test('content security policy permits the exact theme bootstrap and Cloudflare Insights', async (t) => {
+  const { app, db } = await testApp();
+  t.after(() => { app.close(); db.close(); });
+
+  const inlineScript = renderApp().match(/<script>([\s\S]*?)<\/script>/)?.[1];
+  assert.ok(inlineScript, 'theme bootstrap script must exist');
+  const scriptHash = `'sha256-${createHash('sha256').update(inlineScript).digest('base64')}'`;
+
+  const response = await app.inject({ method: 'GET', url: '/' });
+  const csp = response.headers['content-security-policy'];
+  assert.ok(csp.includes(scriptHash));
+  assert.match(csp, /script-src [^;]*https:\/\/static\.cloudflareinsights\.com/);
+  assert.match(csp, /connect-src [^;]*https:\/\/cloudflareinsights\.com/);
+  assert.doesNotMatch(csp, /script-src [^;]*'unsafe-inline'/);
 });

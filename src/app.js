@@ -18,6 +18,7 @@ import { startRefreshScheduler } from './services/refresh.js';
 import { restoreFullAccountLabels } from './services/sync.js';
 
 const MUTATING = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+const THEME_BOOTSTRAP_HASH = "'sha256-nazoARPAa07X5Va4zwQ0fEvL8yyU99JAa/DSXxMpIz0='";
 
 export async function buildApp(options = {}) {
   const config = options.config || loadConfig();
@@ -42,12 +43,12 @@ export async function buildApp(options = {}) {
         formAction: ["'self'"],
         frameAncestors: ["'none'"],
         objectSrc: ["'none'"],
-        scriptSrc: ["'self'"],
+        scriptSrc: ["'self'", THEME_BOOTSTRAP_HASH, 'https://static.cloudflareinsights.com'],
         scriptSrcAttr: ["'none'"],
         styleSrc: ["'self'", "'unsafe-inline'"],
         imgSrc: ["'self'", 'data:'],
         fontSrc: ["'self'", 'data:'],
-        connectSrc: ["'self'"],
+        connectSrc: ["'self'", 'https://cloudflareinsights.com'],
         ...(config.tls ? { upgradeInsecureRequests: [] } : {}),
       },
     },
@@ -99,10 +100,11 @@ export async function buildApp(options = {}) {
 
   // The shell must never be cached: it is the only document that knows which
   // fingerprinted asset URLs the current build uses.
-  app.get('/', async (_request, reply) => reply
+  const appShell = async (_request, reply) => reply
     .header('cache-control', NO_STORE_CACHE_CONTROL)
     .type('text/html')
-    .send(renderApp()));
+    .send(renderApp());
+  for (const path of ['/', '/providers', '/sponsors', '/admin', '/audit']) app.get(path, appShell);
 
   for (const asset of Object.values(assets)) {
     app.get(asset.path, async (_request, reply) => reply

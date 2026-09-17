@@ -23,6 +23,37 @@ const $ = (id) => document.getElementById(id);
 const THEME_KEY = 'portal-theme';
 const QUOTA_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
 const QUOTA_POST_RESET_DELAY_MS = 5 * 1000;
+const TAB_PATHS = {
+  providers: '/providers',
+  sponsors: '/sponsors',
+  admin: '/admin',
+  audit: '/audit',
+};
+const PATH_TABS = {
+  '/providers': 'providers',
+  '/sponsors': 'sponsors',
+  '/admin': 'admin',
+  '/audit': 'audit',
+};
+
+function tabFromPath(pathname) {
+  return PATH_TABS[pathname] || null;
+}
+
+function pathForTab(tab) {
+  return TAB_PATHS[tab] || TAB_PATHS.providers;
+}
+
+function tabIsAvailable(tab) {
+  return Boolean(TAB_PATHS[tab]) && (tab !== 'admin' && tab !== 'audit' || state.me?.role === 'admin');
+}
+
+function syncTabUrl(tab, replace = false) {
+  const path = pathForTab(tab);
+  if (window.location.pathname !== path) {
+    window.history[replace ? 'replaceState' : 'pushState']({ tab }, '', path);
+  }
+}
 
 function storedTheme() {
   try { return localStorage.getItem(THEME_KEY); } catch { return null; }
@@ -75,11 +106,12 @@ function notify(text, kind = 'error') {
 async function refresh() {
   [state.accounts, state.routers] = await Promise.all([api('/api/accounts'), api('/api/router-status')]);
   if (state.me?.role === 'admin' && state.tab === 'admin') await loadAdmin();
+  if (state.me?.role === 'admin' && state.tab === 'audit') await loadAudit();
   if (state.tab === 'sponsors') await loadSponsors();
   render();
   // Quota is part of the Providers surface, so it loads with the page instead
   // of waiting for a click. Failures stay silent per row.
-  loadQuotas();
+  if (state.tab === 'providers') loadQuotas();
 }
 
 async function loadQuotas() {
@@ -198,14 +230,15 @@ function quotaStrip(account) {
   if (!entries.length) return '<div class="quota-inline"><span class="quota-hint">Upstream returned no quota window.</span></div>';
   // Two windows split the row evenly so the strip lines up with the table above.
   return '<div class="quota-inline">' +
-    entries.map(([name, value]) => '<span class="quota-chip"><b>' + esc(quotaName(name)) + '</b>' +
+    entries.map(([name, value]) => '<span class="quota-chip"><b>' + esc(quotaName(name, account.provider, quota.plan)) + '</b>' +
       '<i>' + quotaPercent(value.remaining) + ' remaining</i>' +
       '<span class="progress"><span style="width:' + Math.max(0, Math.min(100, value.remaining)) + '%"></span></span>' +
       '<small>' + quotaResetLabel(value.resetAt) + '</small></span>').join('') +
     '</div>';
 }
 
-function quotaName(name) {
+function quotaName(name, provider, plan) {
+  if (name === 'session' && provider === 'codex' && String(plan || '').trim().toLowerCase() === 'pro') return 'Session (7d)';
   if (name === 'session') return 'Session (5h)';
   if (name === 'weekly') return 'Weekly (7d)';
   return name;
@@ -332,16 +365,19 @@ function modalView() {
   return '';
 }
 
-async function selectTab(tab) {
+async function selectTab(requestedTab, { writeHistory = true, replaceHistory = false } = {}) {
+  const tab = tabIsAvailable(requestedTab) ? requestedTab : 'providers';
   state.view = null;
   state.passwordError = null;
   state.tab = tab;
-  if (tab === 'admin') await loadAdmin();
-  if (tab === 'audit') await loadAudit();
-  if (tab === 'sponsors') await loadSponsors();
-  render();
-  scheduleQuotaRefresh();
-  if (tab === 'providers') loadQuotas();
+  if (writeHistory || tab !== requestedTab) syncTabUrl(tab, replaceHistory || tab !== requestedTab);
+  await refresh();
+}
+
+function bindBrowserNavigation() {
+  window.addEventListener('popstate', () => {
+    if (state.me) void selectTab(tabFromPath(window.location.pathname), { writeHistory: false });
+  });
 }
 
 function render(extra) {
@@ -367,8 +403,9 @@ function render(extra) {
     ['sponsors', '♧', 'Sponsors'],
     ...(state.me.role === 'admin' ? [['admin', '♙', 'Admin'], ['audit', '≣', 'Audit log']] : []),
   ];
-  $('nav').innerHTML = navItems.map(([tab, icon, label]) => '<button class="nav-item ' + (state.tab === tab ? 'active' : '') +
-    '" data-tab="' + tab + '"><span class="ico">' + icon + '</span>' + label + '</button>').join('');
+  $('nav').innerHTML = navItems.map(([tab, icon, label]) => '<a class="nav-item ' + (state.tab === tab ? 'active' : '') +
+    '" ' + (state.tab === tab ? 'aria-current="page" ' : '') + 'href="' + pathForTab(tab) +
+    '" data-tab="' + tab + '"><span class="ico">' + icon + '</span>' + label + '</a>').join('');
   const content = extra !== undefined
     ? extra
     : state.view === 'password'
@@ -406,7 +443,11 @@ function bind() {
     render();
   };
   if ($('btn-password')) $('btn-password').onclick = changePassword;
-  document.querySelectorAll('[data-tab]').forEach((element) => { element.onclick = () => selectTab(element.dataset.tab); });
+  document.querySelectorAll('[data-tab]').forEach((element) => { element.onclick = (event) => {
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    event.preventDefault();
+    void selectTab(element.dataset.tab);
+  }; });
   document.querySelectorAll('[data-add]').forEach((element) => {
     element.onclick = () => startOAuth(element.dataset.add);
   });
@@ -514,8 +555,7 @@ async function submitLogin() {
     state.me = await api('/api/login', { method: 'POST', body: JSON.stringify(credentials) });
     state.loginError = null;
     state.loginNotice = null;
-    state.tab = state.me.role === 'admin' ? 'admin' : 'providers';
-    await refresh();
+    await selectTab(tabFromPath(window.location.pathname), { replaceHistory: true });
   } catch (error) {
     // Login problems belong to the card, not to the page-wide banner.
     state.loginError = error.message;
@@ -533,9 +573,8 @@ async function registerUser() {
     state.me = await api('/api/register', { method: 'POST', body: JSON.stringify(credentials) });
     state.loginError = null;
     state.loginNotice = null;
-    state.tab = 'providers';
     state.message = { text: 'User created successfully.', kind: 'ok' };
-    await refresh();
+    await selectTab('providers', { replaceHistory: true });
   } catch (error) {
     state.loginError = error.message;
     state.loginNotice = null;
@@ -600,8 +639,7 @@ async function updateUserRole(element) {
     });
     state.me = await api('/api/me');
     if (state.me.role !== 'admin') {
-      state.tab = 'providers';
-      await refresh();
+      await selectTab('providers', { replaceHistory: true });
       return;
     }
     await loadAdmin();
@@ -648,10 +686,10 @@ async function removeUser() {
 }
 
 (async function init() {
+  bindBrowserNavigation();
   try {
     state.me = await api('/api/me');
-    state.tab = state.me.role === 'admin' ? 'admin' : 'providers';
-    await refresh();
+    await selectTab(tabFromPath(window.location.pathname), { replaceHistory: true });
   } catch {
     render();
   }
