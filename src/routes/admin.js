@@ -43,6 +43,14 @@ function auditTarget(entry) {
   return targetId;
 }
 
+function sqliteUtcToIso(value) {
+  if (typeof value !== 'string') return value;
+  if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d+)?$/.test(value)) {
+    return `${value.replace(' ', 'T')}Z`;
+  }
+  return value;
+}
+
 export default async function adminRoutes(app, { db, adapters, config }) {
   app.get('/api/admin/settings', async (request, reply) => {
     if (!requireAdmin(request, reply)) return reply;
@@ -214,7 +222,7 @@ export default async function adminRoutes(app, { db, adapters, config }) {
       ORDER BY l.id DESC LIMIT ? OFFSET ?
     `).all(pageSize, (page - 1) * pageSize).map((entry) => ({
       id: entry.id,
-      time: entry.created_at,
+      time: sqliteUtcToIso(entry.created_at),
       actor: entry.actor || 'system',
       action: entry.action,
       target: auditTarget(entry),

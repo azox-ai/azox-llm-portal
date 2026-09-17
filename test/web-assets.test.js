@@ -39,6 +39,16 @@ function navigationClientHelpers() {
   return context.navigationTest;
 }
 
+function auditClientHelpers() {
+  const initStart = appScript.indexOf('(async function init()');
+  assert.notEqual(initStart, -1, 'client startup marker must exist');
+  const context = vm.createContext({});
+  new vm.Script(appScript.slice(0, initStart) +
+    ';globalThis.auditTest = { formatAuditTime };')
+    .runInContext(context);
+  return context.auditTest;
+}
+
 test('client bundle parses and merges quota into the providers surface', () => {
   assert.doesNotThrow(() => new vm.Script(appScript));
   for (const label of ['Providers', 'Sponsors', 'Admin', 'Audit log']) assert.match(appScript, new RegExp(label));
@@ -138,6 +148,13 @@ test('navigator maps each tab to a stable, deep-linkable path', () => {
   assert.equal(navigation.pathForTab('unknown'), '/providers');
   assert.match(appScript, /history\[replace \? 'replaceState' : 'pushState'\]/);
   assert.match(appScript, /addEventListener\('popstate'/);
+});
+
+test('audit timestamps render in Vietnam time', () => {
+  const audit = auditClientHelpers();
+  assert.equal(audit.formatAuditTime('2026-09-17T02:10:04Z'), '17/09/2026 09:10:04');
+  assert.equal(audit.formatAuditTime('invalid'), 'invalid');
+  assert.match(appScript, /Time \(GMT\+7\)/);
 });
 
 test('served assets contain the 9Router-inspired portal shell', () => {

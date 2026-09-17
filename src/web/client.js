@@ -21,6 +21,7 @@ const state = {
 const $ = (id) => document.getElementById(id);
 
 const THEME_KEY = 'portal-theme';
+const AUDIT_TIME_ZONE = 'Asia/Ho_Chi_Minh';
 const QUOTA_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
 const QUOTA_POST_RESET_DELAY_MS = 5 * 1000;
 const TAB_PATHS = {
@@ -77,6 +78,19 @@ function toggleTheme() {
   document.documentElement.dataset.theme = next;
   try { localStorage.setItem(THEME_KEY, next); } catch { /* storage disabled: keep the in-memory theme */ }
   render();
+}
+
+function formatAuditTime(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value || '-';
+  const parts = Object.fromEntries(new Intl.DateTimeFormat('en-GB', {
+    timeZone: AUDIT_TIME_ZONE,
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
+  }).formatToParts(date).filter((part) => part.type !== 'literal')
+    .map((part) => [part.type, part.value]));
+  return parts.day + '/' + parts.month + '/' + parts.year + ' ' +
+    parts.hour + ':' + parts.minute + ':' + parts.second;
 }
 const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (char) =>
   ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
@@ -302,10 +316,10 @@ function adminView() {
 }
 
 function auditView() {
-  const auditRows = state.audit.items.map((entry) => '<tr><td>' + esc(entry.time) + '</td><td>' + esc(entry.actor) +
+  const auditRows = state.audit.items.map((entry) => '<tr><td title="' + esc(entry.time) + '">' + esc(formatAuditTime(entry.time)) + '</td><td>' + esc(entry.actor) +
     '</td><td>' + esc(entry.action) + '</td><td>' + esc(entry.target) + '</td></tr>').join('');
   return '<div class="panel"><div class="panel-head"><div><h2>Audit log</h2><p>Credential and token values never logged.</p></div></div>' +
-    '<div class="table-wrap"><table><thead><tr><th>Time</th><th>Actor</th><th>Action</th><th>Target</th></tr></thead><tbody>' +
+    '<div class="table-wrap"><table><thead><tr><th>Time (GMT+7)</th><th>Actor</th><th>Action</th><th>Target</th></tr></thead><tbody>' +
     (auditRows || '<tr><td colspan="4" class="empty">No audit entries.</td></tr>') + '</tbody></table></div>' +
     '<div class="pagination"><button id="audit-prev"' + (state.audit.page <= 1 ? ' disabled' : '') + '>Previous</button>' +
     '<span>Page ' + state.audit.page + ' of ' + state.audit.totalPages + ' · ' + state.audit.total + ' entries</span>' +
