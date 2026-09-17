@@ -132,8 +132,8 @@ test('admin changes roles and audit pagination resolves user targets', async (t)
 
   db.prepare('DELETE FROM audit_log').run();
   const addAudit = db.prepare(`
-    INSERT INTO audit_log (actor_id, action, target_type, target_id, detail)
-    VALUES (?, ?, 'user', ?, NULL)
+    INSERT INTO audit_log (actor_id, action, target_type, target_id, detail, created_at)
+    VALUES (?, ?, 'user', ?, NULL, '2026-09-17 02:10:04')
   `);
   for (let index = 1; index <= 27; index += 1) {
     addAudit.run(admin.response.json().id, `test.action_${index}`, String(aliceId));
@@ -147,6 +147,7 @@ test('admin changes roles and audit pagination resolves user targets', async (t)
   assert.equal(first.json().totalPages, 2);
   assert.equal(first.json().items[0].target, 'alice');
   assert.equal(first.json().items[0].target.includes('user:'), false);
+  assert.equal(first.json().items[0].time, '2026-09-17T02:10:04Z');
 
   const second = await app.inject({ method: 'GET', url: '/api/admin/audit?page=2&pageSize=20', headers: { cookie: admin.cookie } });
   assert.equal(second.statusCode, 200);
