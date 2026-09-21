@@ -58,7 +58,7 @@ Node.js 22.13+ is required because the portal uses `node:sqlite`.
 
 ## Production
 
-The zbs3 deployment uses `deploy/portal.override.yml`, the external volume
+The zbs0 deployment uses `deploy/portal.override.yml`, the external volume
 `llm-gateway_llm-portal-data`, and an env file at mode `0600`. Schema migrations
 rename and extend the prototype tables in place; the existing database is not
 reset.
