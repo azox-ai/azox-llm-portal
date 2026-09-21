@@ -231,6 +231,24 @@ tr:hover td{background:var(--bg-alt)}
 .policy-source{display:inline-flex;align-items:center;border-radius:999px;padding:3px 8px;font-size:10px;font-weight:800}
 .policy-source.admin{background:rgba(59,130,246,.12);color:var(--info)}
 .policy-source.user{background:var(--brand-soft);color:var(--brand)}
+.personal-quota-form{display:block;padding:18px 20px}
+.policy-settings-grid{display:grid;grid-template-columns:1.15fr .8fr 1.15fr;gap:12px}
+.policy-setting{min-height:92px;margin:0;padding:14px;border:1px solid var(--border-subtle);border-radius:var(--radius);background:var(--bg-alt)}
+.personal-quota-form .policy-setting b{display:block;color:var(--text);font-size:13px}
+.personal-quota-form .policy-setting small{display:block;margin-top:3px;color:var(--muted);font-size:11px;font-weight:400;line-height:1.4}
+.personal-quota-form .policy-switch{align-items:flex-start;gap:12px}
+.personal-quota-form .policy-switch input{appearance:none;width:42px;height:24px;margin:1px 0 0;padding:0;border:1px solid var(--border-strong);border-radius:999px;background:var(--surface-2);position:relative;flex:0 0 42px;cursor:pointer;transition:background .18s ease,border-color .18s ease}
+.personal-quota-form .policy-switch input::after{content:"";position:absolute;width:18px;height:18px;left:2px;top:2px;border-radius:50%;background:var(--surface);box-shadow:0 1px 3px rgba(0,0,0,.28);transition:transform .18s ease}
+.personal-quota-form .policy-switch input:checked{background:var(--brand);border-color:var(--brand)}
+.personal-quota-form .policy-switch input:checked::after{transform:translateX(18px)}
+.personal-quota-form .policy-switch input:focus-visible{outline:0;box-shadow:0 0 0 3px var(--brand-soft)}
+.threshold-setting{display:flex;align-items:center;justify-content:space-between;gap:14px}
+.setting-copy{min-width:0}
+.threshold-control{width:96px;position:relative;flex:0 0 96px}
+.threshold-control input{height:44px;margin:0;padding:9px 31px 9px 10px;text-align:right;font-size:16px;font-weight:700;background:var(--surface)}
+.threshold-control i{position:absolute;right:12px;top:50%;transform:translateY(-50%);color:var(--muted);font-style:normal;font-size:12px;font-weight:700;pointer-events:none}
+.policy-form-footer{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-top:14px;padding-top:14px;border-top:1px solid var(--border-subtle)}
+.policy-form-footer>small{color:var(--muted);font-size:11px}
 .policy-actions{display:flex;align-items:stretch;gap:8px;flex-wrap:wrap}
 .policy-actions button{min-height:44px}
 .role-select{width:110px;margin:0;padding:8px 10px}
@@ -251,12 +269,17 @@ tr:hover td{background:var(--bg-alt)}
 }
 @media(max-width:1120px){
   .connections-grid{grid-template-columns:1fr}
+  .policy-settings-grid{grid-template-columns:1fr 1fr}
+  .policy-setting:last-child{grid-column:1/-1}
 }
 @media(max-width:620px){
   .connection-statuses{grid-template-columns:1fr}
   .connection-token{align-items:flex-start;flex-direction:column;gap:3px}
   .connection-token strong{text-align:left}
   .connection-actions{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .policy-settings-grid{grid-template-columns:1fr}
+  .policy-setting:last-child{grid-column:auto}
+  .policy-form-footer{align-items:flex-start;flex-direction:column}
   .policy-actions{display:grid;grid-template-columns:1fr;width:100%}
 }
 `;

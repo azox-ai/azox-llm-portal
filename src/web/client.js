@@ -273,15 +273,20 @@ function quotaPolicyPanel() {
     '<span class="policy-source ' + esc(policy.source) + '">' + (policy.source === 'user' ? 'Custom' : 'Admin defaults') + '</span></div>' +
     '<p>Applies only to provider accounts sponsored by you. ' + esc(defaultsText) + '</p></div></div>' +
     '<form class="quota-settings-form personal-quota-form" id="user-quota-settings-form">' +
-    '<label class="check-setting"><input id="user-quota-auto-disable" type="checkbox"' + (policy.sessionQuotaAutoDisable ? ' checked' : '') + '>' +
+    '<div class="policy-settings-grid"><label class="policy-setting policy-switch check-setting">' +
+    '<input id="user-quota-auto-disable" type="checkbox" role="switch"' + (policy.sessionQuotaAutoDisable ? ' checked' : '') + '>' +
     '<span><b>Auto-disable</b><small>Pause my accounts when session quota reaches the threshold.</small></span></label>' +
-    '<label>Remaining threshold (%)<input id="user-quota-threshold" type="number" min="0" max="100" step="1" value="' +
-    esc(policy.sessionQuotaThresholdPercent) + '"></label>' +
-    '<label class="check-setting"><input id="user-quota-auto-enable" type="checkbox"' + (policy.sessionQuotaAutoEnable ? ' checked' : '') + '>' +
-    '<span><b>Auto-enable after reset</b><small>Resume only accounts paused by this policy.</small></span></label>' +
+    '<label class="policy-setting threshold-setting"><span class="setting-copy"><b>Remaining threshold</b>' +
+    '<small>Pause when session quota reaches this percentage.</small></span>' +
+    '<span class="threshold-control"><input id="user-quota-threshold" type="number" min="0" max="100" step="1" ' +
+    'aria-label="Remaining threshold percentage" value="' + esc(policy.sessionQuotaThresholdPercent) + '"><i aria-hidden="true">%</i></span></label>' +
+    '<label class="policy-setting policy-switch check-setting"><input id="user-quota-auto-enable" type="checkbox" role="switch"' +
+    (policy.sessionQuotaAutoEnable ? ' checked' : '') + '>' +
+    '<span><b>Auto-enable after reset</b><small>Resume only accounts paused by this policy.</small></span></label></div>' +
+    '<div class="policy-form-footer"><small>Changes apply on the next quota check.</small>' +
     '<div class="policy-actions"><button class="primary" type="submit">Save my policy</button>' +
     (policy.source === 'user' ? '<button id="use-admin-quota-defaults" type="button">Use admin defaults</button>' : '') +
-    '</div></form></div>';
+    '</div></div></form></div>';
 }
 
 function connectionCard(account) {

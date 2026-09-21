@@ -93,6 +93,9 @@ test('client bundle parses and renders quota inside provider connection cards', 
   assert.match(appScript, /refresh-settings-form/);
   assert.match(appScript, /quota-settings-form/);
   assert.match(appScript, /user-quota-settings-form/);
+  assert.match(appScript, /policy-settings-grid/);
+  assert.match(appScript, /policy-form-footer/);
+  assert.match(appScript, /type="checkbox" role="switch"/);
   assert.match(appScript, /My session quota policy/);
   assert.match(appScript, /Use admin defaults/);
   assert.match(appScript, /\/api\/me\/quota-settings/);
@@ -197,6 +200,10 @@ test('served assets contain the 9Router-inspired portal shell', () => {
   assert.match(styles, /main\{max-width:1440px/);
   assert.match(styles, /\.policy-source\.admin/);
   assert.match(styles, /\.policy-source\.user/);
+  assert.match(styles, /\.policy-settings-grid\{display:grid;grid-template-columns:1\.15fr \.8fr 1\.15fr/);
+  assert.match(styles, /\.personal-quota-form \.policy-switch input:checked/);
+  assert.match(styles, /\.threshold-control input\{[^}]*height:44px/);
+  assert.match(styles, /\.policy-form-footer\{display:flex/);
   assert.match(styles, /\.role-select\{width:110px/);
   assert.match(styles, /\.pagination\{display:flex/);
   // Theme toggle: explicit choice beats the OS preference.
