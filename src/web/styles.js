@@ -7,7 +7,9 @@ export const styles = `
 :root{
   --brand:#E56A4A;--brand-hover:#cc5236;--brand-soft:rgba(229,106,74,.12);
   --bg:#FDFAF6;--bg-alt:#F7F3EE;--surface:#fff;--surface-2:#f4f4f5;--sidebar:#F4F1EC;
-  --border:#e5e7eb;--border-subtle:#f1f1f3;
+  /* Three border strengths keep light surfaces distinct without turning the
+     dashboard into a heavy grid. Form controls meet the 3:1 UI boundary. */
+  --border:#B7BDC6;--border-subtle:#D0D4DA;--border-strong:#8B93A0;
   --text:#0a0a0a;--muted:#6B7280;--subtle:#9CA3AF;
   --danger:#cf222e;--success:#10B981;--warning:#F59E0B;--info:#3B82F6;
   --radius:10px;--radius-lg:14px;
@@ -18,7 +20,7 @@ export const styles = `
 @media (prefers-color-scheme:dark){
   :root:not([data-theme="light"]){
     --bg:#1a1a1a;--bg-alt:#1F1F1E;--surface:#262626;--surface-2:#303030;--sidebar:#1e1e1e;
-    --border:#333;--border-subtle:#2a2a2a;
+    --border:#333;--border-subtle:#2a2a2a;--border-strong:#52525b;
     --text:#ededed;--muted:#9ca3af;--subtle:#6b7280;
     --danger:#ef4444;--success:#22c55e;--warning:#fbbf24;--info:#60a5fa;
     --shadow-elev:inset 0 1px 0 0 rgba(255,255,255,.06),0 1px 2px rgba(0,0,0,.4),0 16px 48px -8px rgba(0,0,0,.55);
@@ -27,7 +29,7 @@ export const styles = `
 /* Explicit choice from the theme toggle always wins over the OS preference. */
 :root[data-theme="dark"]{
   --bg:#1a1a1a;--bg-alt:#1F1F1E;--surface:#262626;--surface-2:#303030;--sidebar:#1e1e1e;
-  --border:#333;--border-subtle:#2a2a2a;
+  --border:#333;--border-subtle:#2a2a2a;--border-strong:#52525b;
   --text:#ededed;--muted:#9ca3af;--subtle:#6b7280;
   --danger:#ef4444;--success:#22c55e;--warning:#fbbf24;--info:#60a5fa;
   --shadow-elev:inset 0 1px 0 0 rgba(255,255,255,.06),0 1px 2px rgba(0,0,0,.4),0 16px 48px -8px rgba(0,0,0,.55);
@@ -63,7 +65,7 @@ h1{font-size:19px;margin:2px 0 0}
 main{max-width:1440px;margin:0 auto;padding:30px 26px 34px}
 
 /* ---------------------------------------------------------------- panels */
-.panel{background:var(--surface);border:1px solid var(--border-subtle);border-radius:var(--radius-lg);box-shadow:var(--shadow-soft);margin-bottom:18px;overflow:hidden}
+.panel{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);box-shadow:var(--shadow-soft);margin-bottom:18px;overflow:hidden}
 .panel.compact{max-width:520px;padding:22px}
 .password-shell{display:flex;justify-content:center;padding-top:28px}
 .password-panel{width:min(560px,100%);margin:0}
@@ -74,7 +76,7 @@ main{max-width:1440px;margin:0 auto;padding:30px 26px 34px}
 .panel-head p{margin:3px 0 0;color:var(--muted);font-size:12px}
 .toolbar,.actions{display:flex;gap:7px;flex-wrap:wrap}
 .grid-cards{display:grid;grid-template-columns:repeat(2,minmax(280px,1fr));gap:14px;padding:18px}
-.provider-card{border:1px solid var(--border-subtle);border-radius:var(--radius);padding:16px;background:var(--bg-alt)}
+.provider-card{border:1px solid var(--border);border-radius:var(--radius);padding:16px;background:var(--bg-alt)}
 .provider-card-top{display:flex;gap:11px;align-items:center;margin-bottom:14px}
 .provider-card h3{margin:0;font-size:14px}.provider-card p{margin:2px 0 0;color:var(--muted);font-size:12px}
 .provider-card-meta{display:flex;gap:6px;margin-bottom:14px}.provider-card-meta span{font-size:10px;color:var(--muted);border:1px solid var(--border);background:var(--surface);padding:2px 7px;border-radius:999px}
@@ -90,7 +92,7 @@ button:disabled{opacity:.5;cursor:not-allowed}
 .danger:hover:not(:disabled){border-color:var(--danger);color:var(--danger)}
 .wide{width:100%;padding:11px}
 label{display:block;color:var(--muted);font-size:12px;margin-bottom:13px;font-weight:600}
-input,select,textarea{display:block;width:100%;border:1px solid var(--border);background:var(--surface);padding:10px 11px;border-radius:var(--radius);color:var(--text);margin-top:5px;font:inherit;font-weight:400}
+input,select,textarea{display:block;width:100%;border:1px solid var(--border-strong);background:var(--surface);padding:10px 11px;border-radius:var(--radius);color:var(--text);margin-top:5px;font:inherit;font-weight:400}
 input:focus,select:focus,textarea:focus{outline:0;border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-soft)}
 textarea{min-height:74px;resize:vertical}
 .field-row{display:flex;gap:8px;align-items:flex-start}
@@ -128,7 +130,7 @@ tr:hover td{background:var(--bg-alt)}
 .quota-row td{padding-top:0;border-top:0;background:var(--bg-alt)}
 .quota-inline{display:grid;grid-template-columns:1fr 1fr;gap:14px;width:100%;padding:0 0 6px;margin-top:18px}
 .quota-hint{font-size:12px;color:var(--muted);grid-column:1/-1}
-.quota-chip{display:flex;flex-direction:column;gap:3px;width:100%;border:1px solid var(--border-subtle);border-radius:var(--radius);padding:10px 13px;background:var(--surface)}
+.quota-chip{display:flex;flex-direction:column;gap:3px;width:100%;border:1px solid var(--border);border-radius:var(--radius);padding:10px 13px;background:var(--surface)}
 .quota-chip b{font-size:10px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted)}
 .quota-chip i{font-style:normal;font-size:14px;font-weight:700}
 .quota-chip small{color:var(--muted);font-size:11px}
@@ -143,7 +145,7 @@ tr:hover td{background:var(--bg-alt)}
 
 /* ---------------------------------------------------------------- modal */
 .modal-overlay{position:fixed;inset:0;z-index:50;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(0,0,0,.5);backdrop-filter:blur(2px)}
-.modal{position:relative;width:min(560px,100%);max-height:88vh;overflow:auto;background:var(--surface);border:1px solid var(--border-subtle);border-radius:var(--radius-lg);box-shadow:var(--shadow-elev)}
+.modal{position:relative;width:min(560px,100%);max-height:88vh;overflow:auto;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);box-shadow:var(--shadow-elev)}
 .modal-head{display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--border-subtle)}
 .traffic{display:flex;gap:7px}
 .traffic i{width:12px;height:12px;border-radius:50%;display:block}
@@ -154,13 +156,13 @@ tr:hover td{background:var(--bg-alt)}
 .modal-body{padding:18px}
 .modal-body p{margin:0 0 10px;color:var(--muted);font-size:13px}
 .modal-foot{display:flex;gap:9px;padding:0 18px 18px}
-.step{border:1px solid var(--border-subtle);border-radius:var(--radius);padding:14px;margin-bottom:14px;background:var(--bg-alt)}
+.step{border:1px solid var(--border);border-radius:var(--radius);padding:14px;margin-bottom:14px;background:var(--bg-alt)}
 .step-title{display:flex;align-items:center;gap:8px;font-weight:700;font-size:13px;margin-bottom:8px}
 .step-num{width:20px;height:20px;border-radius:50%;background:var(--brand);color:#fff;display:grid;place-items:center;font-size:11px;font-weight:800}
 .step-hint{color:var(--muted);font-size:12px;margin:0 0 9px}
 .spinner{width:14px;height:14px;border-radius:50%;border:2px solid var(--brand-soft);border-top-color:var(--brand);animation:spin .8s linear infinite;display:inline-block}
 @keyframes spin{to{transform:rotate(360deg)}}
-.waiting-row{display:flex;align-items:center;gap:9px;padding:9px 12px;border:1px solid var(--border-subtle);border-radius:var(--radius);background:var(--bg-alt);font-size:13px;margin-bottom:14px}
+.waiting-row{display:flex;align-items:center;gap:9px;padding:9px 12px;border:1px solid var(--border);border-radius:var(--radius);background:var(--bg-alt);font-size:13px;margin-bottom:14px}
 .divider{display:flex;align-items:center;gap:10px;margin:14px 0}
 .divider i{flex:1;height:1px;background:var(--border);display:block}
 .divider span{font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--subtle);font-weight:700}
@@ -170,7 +172,7 @@ tr:hover td{background:var(--bg-alt)}
 
 /* ---------------------------------------------------------------- auth */
 .auth-shell{min-height:calc(100vh - 66px);display:grid;place-items:center}
-.auth-card{width:min(480px,100%);background:var(--surface);padding:32px;border:1px solid var(--border-subtle);border-radius:var(--radius-lg);box-shadow:var(--shadow-elev)}
+.auth-card{width:min(480px,100%);background:var(--surface);padding:32px;border:1px solid var(--border);border-radius:var(--radius-lg);box-shadow:var(--shadow-elev)}
 .auth-card .brand-mark{margin-bottom:14px}
 .auth-card h2{font-size:23px;margin:4px 0}
 .auth-card p{color:var(--muted);margin:0 0 22px;font-size:13px}
