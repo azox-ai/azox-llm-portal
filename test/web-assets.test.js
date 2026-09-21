@@ -49,15 +49,17 @@ function auditClientHelpers() {
   return context.auditTest;
 }
 
-test('client bundle parses and merges quota into the providers surface', () => {
+test('client bundle parses and renders quota inside provider connection cards', () => {
   assert.doesNotThrow(() => new vm.Script(appScript));
   for (const label of ['Providers', 'Sponsors', 'Admin', 'Audit log']) assert.match(appScript, new RegExp(label));
-  // Quota Tracker is no longer a separate tab: it renders under each account row.
-  assert.match(appScript, /quota-row/);
+  // Quota Tracker is no longer a separate tab: it renders inside each account card.
+  assert.match(appScript, /connections-grid/);
+  assert.match(appScript, /connection-card/);
+  assert.match(appScript, /quota-meter/);
   assert.match(appScript, /quotaStrip/);
   assert.match(appScript, /data-reauth="' \+ account\.id/);
   assert.match(appScript, /JSON\.stringify\(\{ accountId \}\)/);
-  assert.match(appScript, /Portal ID:/);
+  assert.match(appScript, /Portal ID /);
   assert.doesNotMatch(appScript, /\['quota', /);
   assert.doesNotMatch(appScript, /function quotaView/);
   // Quota now loads with the page instead of behind a button.
@@ -72,7 +74,7 @@ test('client bundle parses and merges quota into the providers surface', () => {
   assert.match(appScript, /sponsorsView/);
   assert.doesNotMatch(appScript, /Tạo tài khoản mới/);
   assert.match(appScript, /OmniRoute/);
-  assert.match(appScript, /Sponsored by: /);
+  assert.match(appScript, /Sponsored by /);
   assert.match(appScript, /Step 1: Open OAuth URL|Open OAuth URL in browser/);
   assert.match(appScript, /Paste full Codex callback URL/);
   // Login uses one form for users and admins, with errors inside the card.
@@ -90,6 +92,12 @@ test('client bundle parses and merges quota into the providers surface', () => {
   assert.match(appScript, /Before expiry \(hours\)/);
   assert.match(appScript, /refresh-settings-form/);
   assert.match(appScript, /quota-settings-form/);
+  assert.match(appScript, /user-quota-settings-form/);
+  assert.match(appScript, /My session quota policy/);
+  assert.match(appScript, /Use admin defaults/);
+  assert.match(appScript, /\/api\/me\/quota-settings/);
+  assert.match(appScript, /updateMyQuotaSettings/);
+  assert.match(appScript, /resetMyQuotaSettings/);
   assert.match(appScript, /sessionQuotaAutoDisable/);
   assert.match(appScript, /sessionQuotaThresholdPercent/);
   assert.match(appScript, /sessionQuotaAutoEnable/);
@@ -172,14 +180,20 @@ test('served assets contain the 9Router-inspired portal shell', () => {
   assert.match(styles, /input,select,textarea\{[^}]*border:1px solid var\(--border-strong\)/);
   assert.match(styles, /\.panel\{[^}]*border:1px solid var\(--border\)/);
   assert.match(styles, /\.modal-overlay/);
-  // Session and weekly share the row evenly, with the requested top margin.
-  assert.match(styles, /\.quota-inline\{display:grid;grid-template-columns:1fr 1fr[^}]*margin-top:18px\}/);
+  // Connections reflow from a two-column dashboard grid to one column.
+  assert.match(styles, /\.connections-grid\{display:grid;grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
+  assert.match(styles, /@media\(max-width:1120px\)\{\s*\.connections-grid\{grid-template-columns:1fr\}/);
+  assert.match(styles, /\.connection-card\{[^}]*border:1px solid var\(--border\)/);
+  assert.match(styles, /\.connection-statuses\{display:grid;grid-template-columns:repeat\(3,minmax\(0,1fr\)\)/);
+  assert.match(styles, /\.connection-actions button\{[^}]*min-height:44px/);
+  assert.match(styles, /\.quota-meter \.progress\{[^}]*grid-column:1\/-1/);
   // Sponsor tables share one fixed column grid so groups line up.
   assert.match(styles, /\.sponsor-group table\{table-layout:fixed/);
   assert.match(styles, /\.login-form\{margin-top:16px\}/);
   assert.match(styles, /\.auth-card\{width:min\(480px,100%\)/);
   assert.match(styles, /main\{max-width:1440px/);
-  assert.match(styles, /\.connections-table th,\.connections-table td\{white-space:nowrap\}/);
+  assert.match(styles, /\.policy-source\.admin/);
+  assert.match(styles, /\.policy-source\.user/);
   assert.match(styles, /\.role-select\{width:110px/);
   assert.match(styles, /\.pagination\{display:flex/);
   // Theme toggle: explicit choice beats the OS preference.

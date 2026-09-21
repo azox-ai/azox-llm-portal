@@ -795,3 +795,144 @@ test('a failed refresh does not start the minimum-gap window', async (t) => {
   await runRefreshTick(db, adapters, config, refreshFetch, now + 60_000);
   assert.equal(attempts, 2);
 });
+
+test('users override session quota defaults only for themselves and can restore inheritance', async (t) => {
+  const { app, db } = await testApp();
+  t.after(() => { app.close(); db.close(); });
+  const admin = await session(app, db, 'quota-admin', 'admin');
+  const aliceId = await seedUser(db, 'quota-alice');
+  const bobId = await seedUser(db, 'quota-bob');
+  const alice = await login(app, 'quota-alice');
+  const bob = await login(app, 'quota-bob');
+
+  const globalChanged = await app.inject({
+    method: 'PATCH', url: '/api/admin/settings', headers: authHeaders(admin),
+    payload: {
+      sessionQuotaAutoDisable: false,
+      sessionQuotaThresholdPercent: 42,
+      sessionQuotaAutoEnable: false,
+    },
+  });
+  assert.equal(globalChanged.statusCode, 200);
+
+  const inherited = await app.inject({
+    method: 'GET', url: '/api/me/quota-settings', headers: { cookie: alice.cookie },
+  });
+  assert.equal(inherited.statusCode, 200);
+  assert.deepEqual(inherited.json(), {
+    sessionQuotaAutoDisable: false,
+    sessionQuotaThresholdPercent: 42,
+    sessionQuotaAutoEnable: false,
+    source: 'admin',
+    adminDefaults: {
+      sessionQuotaAutoDisable: false,
+      sessionQuotaThresholdPercent: 42,
+      sessionQuotaAutoEnable: false,
+    },
+  });
+
+  const customized = await app.inject({
+    method: 'PATCH', url: '/api/me/quota-settings', headers: authHeaders(alice),
+    payload: {
+      sessionQuotaAutoDisable: true,
+      sessionQuotaThresholdPercent: 18,
+      sessionQuotaAutoEnable: true,
+    },
+  });
+  assert.equal(customized.statusCode, 200);
+  assert.equal(customized.json().source, 'user');
+  assert.equal(customized.json().sessionQuotaThresholdPercent, 18);
+  const storedOverride = db.prepare(`
+    SELECT auto_disable, threshold_percent, auto_enable
+    FROM user_quota_settings WHERE user_id = ?
+  `).get(aliceId);
+  assert.equal(storedOverride.auto_disable, 1);
+  assert.equal(storedOverride.threshold_percent, 18);
+  assert.equal(storedOverride.auto_enable, 1);
+
+  const bobStillInherits = await app.inject({
+    method: 'GET', url: '/api/me/quota-settings', headers: { cookie: bob.cookie },
+  });
+  assert.equal(bobStillInherits.json().source, 'admin');
+  assert.equal(bobStillInherits.json().sessionQuotaThresholdPercent, 42);
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM user_quota_settings WHERE user_id = ?').get(bobId).count, 0);
+
+  for (const payload of [
+    { sessionQuotaAutoDisable: 'yes', sessionQuotaThresholdPercent: 20, sessionQuotaAutoEnable: true },
+    { sessionQuotaAutoDisable: true, sessionQuotaThresholdPercent: -1, sessionQuotaAutoEnable: true },
+    { sessionQuotaAutoDisable: true, sessionQuotaThresholdPercent: 101, sessionQuotaAutoEnable: true },
+    { sessionQuotaAutoDisable: true, sessionQuotaThresholdPercent: '20', sessionQuotaAutoEnable: true },
+    { sessionQuotaAutoDisable: true, sessionQuotaThresholdPercent: 20, sessionQuotaAutoEnable: 1 },
+  ]) {
+    const rejected = await app.inject({
+      method: 'PATCH', url: '/api/me/quota-settings', headers: authHeaders(alice), payload,
+    });
+    assert.equal(rejected.statusCode, 400);
+  }
+
+  const unauthenticated = await app.inject({ method: 'GET', url: '/api/me/quota-settings' });
+  assert.equal(unauthenticated.statusCode, 401);
+
+  const restored = await app.inject({
+    method: 'DELETE', url: '/api/me/quota-settings', headers: authHeaders(alice),
+  });
+  assert.equal(restored.statusCode, 200);
+  assert.equal(restored.json().source, 'admin');
+  assert.equal(restored.json().sessionQuotaThresholdPercent, 42);
+
+  await app.inject({
+    method: 'PATCH', url: '/api/me/quota-settings', headers: authHeaders(alice),
+    payload: {
+      sessionQuotaAutoDisable: true,
+      sessionQuotaThresholdPercent: 25,
+      sessionQuotaAutoEnable: true,
+    },
+  });
+  db.prepare('DELETE FROM users WHERE id = ?').run(aliceId);
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM user_quota_settings WHERE user_id = ?').get(aliceId).count, 0);
+});
+
+test('quota automation applies the effective policy for each account owner', async (t) => {
+  const { app, db, config, adapters } = await testApp();
+  t.after(() => { app.close(); db.close(); });
+  const customOwnerId = await seedUser(db, 'custom-quota-owner');
+  const defaultOwnerId = await seedUser(db, 'default-quota-owner');
+
+  db.prepare(`
+    INSERT INTO app_settings (key, value) VALUES
+      ('session_quota_auto_disable', '0'),
+      ('session_quota_threshold_percent', '30'),
+      ('session_quota_auto_enable', '0')
+  `).run();
+  db.prepare(`
+    INSERT INTO user_quota_settings (user_id, auto_disable, threshold_percent, auto_enable)
+    VALUES (?, 1, 30, 0)
+  `).run(customOwnerId);
+  const insertAccount = db.prepare(`
+    INSERT INTO provider_accounts
+      (owner_id, provider, upstream_subject, display_name, credential_envelope)
+    VALUES (?, 'claude', ?, ?, ?)
+  `);
+  const customAccountId = Number(insertAccount.run(
+    customOwnerId,
+    'custom-policy-subject',
+    'Custom policy account',
+    encryptJson({ accessToken: 'custom-policy-access' }, config.encryptionKey),
+  ).lastInsertRowid);
+  const defaultAccountId = Number(insertAccount.run(
+    defaultOwnerId,
+    'default-policy-subject',
+    'Default policy account',
+    encryptJson({ accessToken: 'default-policy-access' }, config.encryptionKey),
+  ).lastInsertRowid);
+
+  const result = await runQuotaAutomationTick(db, adapters, config, {
+    claude: async () => new Response(JSON.stringify({
+      five_hour: { utilization: 80, resets_at: '2030-01-01T05:00:00.000Z' },
+    }), { status: 200 }),
+  }, Date.parse('2030-01-01T00:00:00.000Z'));
+
+  assert.deepEqual(result, { checked: 1, disabled: 1, enabled: 0, failed: 0 });
+  assert.equal(db.prepare('SELECT desired_enabled FROM provider_accounts WHERE id = ?').get(customAccountId).desired_enabled, 0);
+  assert.equal(db.prepare('SELECT desired_enabled FROM provider_accounts WHERE id = ?').get(defaultAccountId).desired_enabled, 1);
+});
