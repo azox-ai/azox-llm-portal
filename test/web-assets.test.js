@@ -168,6 +168,9 @@ test('served assets contain the 9Router-inspired portal shell', () => {
   assert.doesNotMatch(renderApp(), /Portal owns credentials/);
   assert.match(styles, /\.nav-item/);
   assert.match(styles, /--brand:#E56A4A/);
+  assert.match(styles, /--border:#B7BDC6;--border-subtle:#D0D4DA;--border-strong:#8B93A0/);
+  assert.match(styles, /input,select,textarea\{[^}]*border:1px solid var\(--border-strong\)/);
+  assert.match(styles, /\.panel\{[^}]*border:1px solid var\(--border\)/);
   assert.match(styles, /\.modal-overlay/);
   // Session and weekly share the row evenly, with the requested top margin.
   assert.match(styles, /\.quota-inline\{display:grid;grid-template-columns:1fr 1fr[^}]*margin-top:18px\}/);
