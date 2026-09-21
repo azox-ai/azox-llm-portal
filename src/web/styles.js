@@ -126,16 +126,44 @@ tr:hover td{background:var(--bg-alt)}
 .readonly{display:flex;align-items:center;gap:9px;background:rgba(59,130,246,.1);color:var(--info)}
 .readonly span{background:var(--info);color:#fff;border-radius:5px;padding:2px 7px;font-size:10px;text-transform:uppercase;letter-spacing:.6px}
 
+/* --------------------------------------------------------- connections */
+.connection-count{font-size:11px;color:var(--muted);border:1px solid var(--border);border-radius:999px;padding:4px 10px}
+.connections-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;padding:18px;background:var(--bg-alt)}
+.connection-card{min-width:0;border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--surface);overflow:hidden;box-shadow:var(--shadow-soft)}
+.connection-card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:15px 16px;border-bottom:1px solid var(--border-subtle)}
+.connection-card .account-name{min-width:0;align-items:flex-start}
+.connection-card .account-name>div{min-width:0}
+.connection-card h3{margin:0;font-size:14px;line-height:1.35;overflow-wrap:anywhere}
+.connection-card .provider-label{display:block;color:var(--muted);font-size:12px}
+.connection-card .account-name small{overflow-wrap:anywhere}
+.connection-statuses{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;padding:12px 16px;border-bottom:1px solid var(--border-subtle);background:var(--bg-alt)}
+.connection-statuses>div{min-width:0}
+.connection-statuses>div>span:first-child{display:block;margin-bottom:5px;color:var(--subtle);font-size:9px;font-weight:800;letter-spacing:.7px;text-transform:uppercase}
+.connection-token{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 16px;border-bottom:1px solid var(--border-subtle);font-size:11px}
+.connection-token span{color:var(--muted)}
+.connection-token strong{text-align:right;font-size:11px;overflow-wrap:anywhere}
+.quota-policy-warning{margin:12px 16px 0;padding:8px 10px;border:1px solid rgba(245,158,11,.38);border-radius:var(--radius);background:rgba(245,158,11,.1);color:var(--warning);font-size:11px;font-weight:700}
+.connection-actions{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;padding:13px 16px;border-top:1px solid var(--border-subtle);background:var(--bg-alt)}
+.connection-actions button{min-width:0;min-height:44px;padding:8px}
+
 /* ---------------------------------------------------------------- quota */
-.quota-row td{padding-top:0;border-top:0;background:var(--bg-alt)}
-.quota-inline{display:grid;grid-template-columns:1fr 1fr;gap:14px;width:100%;padding:0 0 6px;margin-top:18px}
-.quota-hint{font-size:12px;color:var(--muted);grid-column:1/-1}
-.quota-chip{display:flex;flex-direction:column;gap:3px;width:100%;border:1px solid var(--border);border-radius:var(--radius);padding:10px 13px;background:var(--surface)}
-.quota-chip b{font-size:10px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted)}
-.quota-chip i{font-style:normal;font-size:14px;font-weight:700}
-.quota-chip small{color:var(--muted);font-size:11px}
-.progress{height:6px;border-radius:6px;background:var(--surface-2);overflow:hidden;margin-bottom:8px}
-.progress span{height:100%;display:block;background:linear-gradient(90deg,var(--brand),#f0a58c)}
+.connection-quotas{display:flex;flex-direction:column;gap:11px;padding:13px 16px 15px}
+.quota-section-title{color:var(--subtle);font-size:9px;font-weight:800;letter-spacing:.7px;text-transform:uppercase}
+.quota-hint{font-size:12px;color:var(--muted)}
+.quota-meter{display:grid;grid-template-columns:1fr auto;column-gap:12px;align-items:center}
+.quota-meter-head{display:contents}
+.quota-meter-head>span{display:flex;align-items:center;gap:7px;font-size:11px;font-weight:700}
+.quota-meter-head>span i{width:8px;height:8px;border-radius:50%;background:var(--success);box-shadow:0 0 7px currentColor}
+.quota-meter.medium .quota-meter-head>span i{background:var(--warning)}
+.quota-meter.low .quota-meter-head>span i{background:var(--danger)}
+.quota-meter-head strong{font-size:11px;text-align:right}
+.quota-meter.medium .quota-meter-head strong{color:var(--warning)}
+.quota-meter.low .quota-meter-head strong{color:var(--danger)}
+.quota-meter .progress{grid-column:1/-1;height:5px;border-radius:6px;background:var(--surface-2);overflow:hidden;margin:6px 0 4px}
+.quota-meter .progress span{height:100%;display:block;background:var(--success)}
+.quota-meter.medium .progress span{background:var(--warning)}
+.quota-meter.low .progress span{background:var(--danger)}
+.quota-meter small{grid-column:1/-1;color:var(--muted);font-size:10px;text-align:right}
 
 /* ------------------------------------------------------------- sponsors */
 .sponsor-group .panel-head{align-items:center}
@@ -197,7 +225,12 @@ tr:hover td{background:var(--bg-alt)}
 .check-setting span,.check-setting b,.check-setting small{display:block}
 .check-setting b{color:var(--text);font-size:12px}
 .check-setting small{color:var(--muted);font-size:10px;font-weight:400}
-.connections-table th,.connections-table td{white-space:nowrap}
+.title-with-badge{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.policy-source{display:inline-flex;align-items:center;border-radius:999px;padding:3px 8px;font-size:10px;font-weight:800}
+.policy-source.admin{background:rgba(59,130,246,.12);color:var(--info)}
+.policy-source.user{background:var(--brand-soft);color:var(--brand)}
+.policy-actions{display:flex;align-items:stretch;gap:8px;flex-wrap:wrap}
+.policy-actions button{min-height:44px}
 .role-select{width:110px;margin:0;padding:8px 10px}
 .pagination{display:flex;justify-content:flex-end;align-items:center;gap:12px;padding:14px 18px;border-top:1px solid var(--border-subtle);color:var(--muted);font-size:12px}
 
@@ -213,5 +246,15 @@ tr:hover td{background:var(--bg-alt)}
   .create-user{grid-template-columns:1fr}
   .settings-form,.quota-settings-form,.grid-cards{grid-template-columns:1fr}
   .actions{min-width:240px}
+}
+@media(max-width:1120px){
+  .connections-grid{grid-template-columns:1fr}
+}
+@media(max-width:620px){
+  .connection-statuses{grid-template-columns:1fr}
+  .connection-token{align-items:flex-start;flex-direction:column;gap:3px}
+  .connection-token strong{text-align:left}
+  .connection-actions{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .policy-actions{display:grid;grid-template-columns:1fr;width:100%}
 }
 `;
