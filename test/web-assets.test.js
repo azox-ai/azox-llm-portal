@@ -178,6 +178,8 @@ test('served assets contain the 9Router-inspired portal shell', () => {
   assert.match(styles, /--brand:#E56A4A/);
   assert.match(styles, /--border:#B7BDC6;--border-subtle:#D0D4DA;--border-strong:#8B93A0/);
   assert.match(styles, /input,select,textarea\{[^}]*border:1px solid var\(--border-strong\)/);
+  assert.match(styles, /#quota-threshold,#user-quota-threshold\{appearance:textfield;-moz-appearance:textfield\}/);
+  assert.match(styles, /#user-quota-threshold::-webkit-inner-spin-button/);
   assert.match(styles, /\.panel\{[^}]*border:1px solid var\(--border\)/);
   assert.match(styles, /\.modal-overlay/);
   // Connections reflow from a two-column dashboard grid to one column.

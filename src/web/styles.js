@@ -93,6 +93,8 @@ button:disabled{opacity:.5;cursor:not-allowed}
 .wide{width:100%;padding:11px}
 label{display:block;color:var(--muted);font-size:12px;margin-bottom:13px;font-weight:600}
 input,select,textarea{display:block;width:100%;border:1px solid var(--border-strong);background:var(--surface);padding:10px 11px;border-radius:var(--radius);color:var(--text);margin-top:5px;font:inherit;font-weight:400}
+#quota-threshold,#user-quota-threshold{appearance:textfield;-moz-appearance:textfield}
+#quota-threshold::-webkit-inner-spin-button,#quota-threshold::-webkit-outer-spin-button,#user-quota-threshold::-webkit-inner-spin-button,#user-quota-threshold::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
 input:focus,select:focus,textarea:focus{outline:0;border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-soft)}
 textarea{min-height:74px;resize:vertical}
 .field-row{display:flex;gap:8px;align-items:flex-start}
