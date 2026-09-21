@@ -35,6 +35,8 @@ const ACTION_LABELS = {
   'admin.login_failed': 'admin login failed',
   'user.registered': 'user registered',
   'user.password_changed': 'password changed',
+  'user.update_quota_settings': 'personal quota settings updated',
+  'user.reset_quota_settings': 'personal quota settings reset',
 };
 
 function auditTarget(entry) {

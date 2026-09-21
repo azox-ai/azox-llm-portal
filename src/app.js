@@ -10,6 +10,7 @@ import { buildAdapters } from './adapters/router-adapter.js';
 import authRoutes from './routes/auth.js';
 import accountRoutes from './routes/accounts.js';
 import adminRoutes from './routes/admin.js';
+import preferenceRoutes from './routes/preferences.js';
 import { renderApp } from './web/page.js';
 import {
   assets, IMMUTABLE_CACHE_CONTROL, NO_STORE_CACHE_CONTROL,
@@ -92,6 +93,7 @@ export async function buildApp(options = {}) {
   await app.register(authRoutes, { db, config });
   await app.register(accountRoutes, { db, config, adapters, oauthFetch: options.oauthFetch });
   await app.register(adminRoutes, { db, adapters, config });
+  await app.register(preferenceRoutes, { db });
 
   await restoreFullAccountLabels(db, adapters, config);
 

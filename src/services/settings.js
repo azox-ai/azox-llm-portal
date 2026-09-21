@@ -64,7 +64,7 @@ export function getSessionQuotaSettings(db) {
   };
 }
 
-export function setSessionQuotaSettings(db, { autoDisable, thresholdPercent, autoEnable }) {
+export function validateSessionQuotaSettings({ autoDisable, thresholdPercent, autoEnable }) {
   if (typeof autoDisable !== 'boolean') throw new TypeError('Session quota auto-disable must be a boolean');
   if (typeof autoEnable !== 'boolean') throw new TypeError('Session quota auto-enable must be a boolean');
   if (!Number.isInteger(thresholdPercent)
@@ -72,8 +72,54 @@ export function setSessionQuotaSettings(db, { autoDisable, thresholdPercent, aut
     || thresholdPercent > MAX_SESSION_QUOTA_THRESHOLD) {
     throw new RangeError(`Session quota threshold must be ${MIN_SESSION_QUOTA_THRESHOLD}-${MAX_SESSION_QUOTA_THRESHOLD} percent`);
   }
+  return { autoDisable, thresholdPercent, autoEnable };
+}
+
+export function setSessionQuotaSettings(db, { autoDisable, thresholdPercent, autoEnable }) {
+  validateSessionQuotaSettings({ autoDisable, thresholdPercent, autoEnable });
   setValue(db, SESSION_QUOTA_AUTO_DISABLE_KEY, autoDisable ? 1 : 0);
   setValue(db, SESSION_QUOTA_THRESHOLD_KEY, thresholdPercent);
   setValue(db, SESSION_QUOTA_AUTO_ENABLE_KEY, autoEnable ? 1 : 0);
   return { autoDisable, thresholdPercent, autoEnable };
+}
+
+export function getUserSessionQuotaSettings(db, userId) {
+  const adminDefaults = getSessionQuotaSettings(db);
+  const row = db.prepare(`
+    SELECT auto_disable, threshold_percent, auto_enable
+    FROM user_quota_settings WHERE user_id = ?
+  `).get(userId);
+  if (!row) return { ...adminDefaults, source: 'admin', adminDefaults };
+  return {
+    autoDisable: Boolean(row.auto_disable),
+    thresholdPercent: row.threshold_percent,
+    autoEnable: Boolean(row.auto_enable),
+    source: 'user',
+    adminDefaults,
+  };
+}
+
+export function setUserSessionQuotaSettings(db, userId, settings) {
+  const validated = validateSessionQuotaSettings(settings);
+  db.prepare(`
+    INSERT INTO user_quota_settings
+      (user_id, auto_disable, threshold_percent, auto_enable, updated_at)
+    VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+    ON CONFLICT(user_id) DO UPDATE SET
+      auto_disable = excluded.auto_disable,
+      threshold_percent = excluded.threshold_percent,
+      auto_enable = excluded.auto_enable,
+      updated_at = CURRENT_TIMESTAMP
+  `).run(
+    userId,
+    validated.autoDisable ? 1 : 0,
+    validated.thresholdPercent,
+    validated.autoEnable ? 1 : 0,
+  );
+  return getUserSessionQuotaSettings(db, userId);
+}
+
+export function deleteUserSessionQuotaSettings(db, userId) {
+  db.prepare('DELETE FROM user_quota_settings WHERE user_id = ?').run(userId);
+  return getUserSessionQuotaSettings(db, userId);
 }

@@ -82,20 +82,34 @@ export async function runQuotaAutomationTick(
   fetchByProvider = {},
   now = Date.now(),
 ) {
-  // Settings are read on every tick so admin changes apply without a restart.
-  const settings = getSessionQuotaSettings(db);
-  if (!settings.autoDisable && !settings.autoEnable) {
-    return { checked: 0, disabled: 0, enabled: 0, failed: 0 };
-  }
+  // Defaults are read on every tick so admin changes apply without a restart.
+  // Each owner may override them without affecting anyone else's accounts.
+  const defaults = getSessionQuotaSettings(db);
   const accounts = db.prepare(`
-    SELECT * FROM provider_accounts
-    WHERE credential_status = 'active'
-      AND ((? = 1 AND desired_enabled = 1) OR quota_auto_disabled = 1)
-    ORDER BY id
-  `).all(settings.autoDisable ? 1 : 0);
+    SELECT a.*,
+           COALESCE(q.auto_disable, ?) AS effective_auto_disable,
+           COALESCE(q.threshold_percent, ?) AS effective_threshold_percent,
+           COALESCE(q.auto_enable, ?) AS effective_auto_enable
+    FROM provider_accounts a
+    LEFT JOIN user_quota_settings q ON q.user_id = a.owner_id
+    WHERE a.credential_status = 'active'
+      AND ((COALESCE(q.auto_disable, ?) = 1 AND a.desired_enabled = 1)
+        OR a.quota_auto_disabled = 1)
+    ORDER BY a.id
+  `).all(
+    defaults.autoDisable ? 1 : 0,
+    defaults.thresholdPercent,
+    defaults.autoEnable ? 1 : 0,
+    defaults.autoDisable ? 1 : 0,
+  );
   const result = { checked: 0, disabled: 0, enabled: 0, failed: 0 };
 
   for (const account of accounts) {
+    const settings = {
+      autoDisable: Boolean(account.effective_auto_disable),
+      thresholdPercent: account.effective_threshold_percent,
+      autoEnable: Boolean(account.effective_auto_enable),
+    };
     try {
       if (account.quota_auto_disabled === 1) {
         const synced = await repairAutomatedSync(db, adapters, config, account);
