@@ -15,6 +15,7 @@ import {
   assets, IMMUTABLE_CACHE_CONTROL, NO_STORE_CACHE_CONTROL,
 } from './web/assets.js';
 import { startRefreshScheduler } from './services/refresh.js';
+import { startQuotaAutomationScheduler } from './services/quota-automation.js';
 import { restoreFullAccountLabels } from './services/sync.js';
 
 const MUTATING = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
@@ -97,6 +98,13 @@ export async function buildApp(options = {}) {
   const stopRefreshScheduler = options.startScheduler === false
     ? () => {}
     : startRefreshScheduler(db, adapters, config, options.refreshFetch);
+  const quotaFetch = options.quotaFetch || {
+    claude: options.oauthFetch?.claudeQuota,
+    codex: options.oauthFetch?.codexQuota,
+  };
+  const stopQuotaAutomationScheduler = options.startScheduler === false
+    ? () => {}
+    : startQuotaAutomationScheduler(db, adapters, config, quotaFetch);
 
   // The shell must never be cached: it is the only document that knows which
   // fingerprinted asset URLs the current build uses.
@@ -128,6 +136,7 @@ export async function buildApp(options = {}) {
 
   app.addHook('onClose', async () => {
     stopRefreshScheduler();
+    stopQuotaAutomationScheduler();
     if (!options.db) db.close();
   });
   return { app, db, config, adapters };

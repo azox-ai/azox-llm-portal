@@ -105,6 +105,7 @@ tr:hover td{background:var(--bg-alt)}
 .account-name{display:flex;gap:10px;align-items:center}
 .account-name strong,.account-name h2{display:block;margin:0}
 .account-name small{display:block;color:var(--muted);font-size:11px}
+.account-name .quota-policy{color:var(--warning);font-weight:600}
 .account-name .sponsor{display:block;color:var(--subtle);font-size:11px;margin-top:1px}
 .provider-icon{width:32px;height:32px;border-radius:9px;color:#fff;display:grid;place-items:center;font-weight:800;flex:0 0 auto}
 .provider-icon.claude{background:#d97757}
@@ -186,6 +187,14 @@ tr:hover td{background:var(--bg-alt)}
 .settings-form{display:grid;grid-template-columns:minmax(220px,360px) auto;gap:10px;padding:16px 20px;align-items:end}
 .settings-form label{margin-bottom:0}
 .settings-form button{height:40px}
+.quota-settings-form{display:grid;grid-template-columns:minmax(250px,1.4fr) minmax(160px,.6fr) minmax(250px,1.4fr) auto;gap:14px;padding:16px 20px;align-items:end}
+.quota-settings-form>label{margin-bottom:0}
+.quota-settings-form>button{height:40px}
+.check-setting{display:flex;align-items:center;gap:10px;min-height:40px}
+.check-setting input{width:18px;height:18px;margin:0;flex:0 0 auto}
+.check-setting span,.check-setting b,.check-setting small{display:block}
+.check-setting b{color:var(--text);font-size:12px}
+.check-setting small{color:var(--muted);font-size:10px;font-weight:400}
 .connections-table th,.connections-table td{white-space:nowrap}
 .role-select{width:110px;margin:0;padding:8px 10px}
 .pagination{display:flex;justify-content:flex-end;align-items:center;gap:12px;padding:14px 18px;border-top:1px solid var(--border-subtle);color:var(--muted);font-size:12px}
@@ -200,7 +209,7 @@ tr:hover td{background:var(--bg-alt)}
   .topbar{padding:0 14px}
   main{padding:14px}
   .create-user{grid-template-columns:1fr}
-  .settings-form,.grid-cards{grid-template-columns:1fr}
+  .settings-form,.quota-settings-form,.grid-cards{grid-template-columns:1fr}
   .actions{min-width:240px}
 }
 `;

@@ -34,6 +34,8 @@ export function migrate(db) {
     addColumn(db, 'provider_accounts', 'access_expires_at', 'TEXT');
     addColumn(db, 'provider_accounts', 'last_refresh_at', 'TEXT');
     addColumn(db, 'provider_accounts', 'last_refresh_error', 'TEXT');
+    addColumn(db, 'provider_accounts', 'quota_auto_disabled', 'INTEGER NOT NULL DEFAULT 0 CHECK (quota_auto_disabled IN (0, 1))');
+    addColumn(db, 'provider_accounts', 'quota_session_reset_at', 'TEXT');
   }
 
   if (tableExists(db, 'oauth_states')) {

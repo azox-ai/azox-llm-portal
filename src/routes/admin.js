@@ -5,6 +5,8 @@ import { audit } from '../services/audit.js';
 import { removeAccount } from '../services/sync.js';
 import {
   getRefreshLeadHours, setRefreshLeadHours, MIN_REFRESH_LEAD_HOURS, MAX_REFRESH_LEAD_HOURS,
+  getSessionQuotaSettings, setSessionQuotaSettings,
+  MIN_SESSION_QUOTA_THRESHOLD, MAX_SESSION_QUOTA_THRESHOLD,
 } from '../services/settings.js';
 
 function requireAdmin(request, reply) {
@@ -18,6 +20,8 @@ const ACTION_LABELS = {
   'account.reauthenticated': 'account re-authenticated',
   'account.enabled': 'account enabled',
   'account.disabled': 'account disabled',
+  'account.auto_enabled_quota': 'account auto-enabled after quota reset',
+  'account.auto_disabled_quota': 'account auto-disabled by session quota',
   'account.removed': 'account removed',
   'account.remove_failed': 'account removal failed',
   'admin.create_user': 'user created',
@@ -54,23 +58,64 @@ function sqliteUtcToIso(value) {
 export default async function adminRoutes(app, { db, adapters, config }) {
   app.get('/api/admin/settings', async (request, reply) => {
     if (!requireAdmin(request, reply)) return reply;
-    return { refreshLeadHours: getRefreshLeadHours(db, config) };
+    const quota = getSessionQuotaSettings(db);
+    return {
+      refreshLeadHours: getRefreshLeadHours(db, config),
+      sessionQuotaAutoDisable: quota.autoDisable,
+      sessionQuotaThresholdPercent: quota.thresholdPercent,
+      sessionQuotaAutoEnable: quota.autoEnable,
+    };
   });
 
   app.patch('/api/admin/settings', async (request, reply) => {
     if (!requireAdmin(request, reply)) return reply;
-    const refreshLeadHours = Number(request.body?.refreshLeadHours);
-    if (!Number.isInteger(refreshLeadHours)
+    const body = request.body || {};
+    const hasRefreshLead = Object.hasOwn(body, 'refreshLeadHours');
+    const hasQuotaSetting = ['sessionQuotaAutoDisable', 'sessionQuotaThresholdPercent', 'sessionQuotaAutoEnable']
+      .some((key) => Object.hasOwn(body, key));
+    if (!hasRefreshLead && !hasQuotaSetting) {
+      return reply.code(400).send({ error: 'No supported setting supplied' });
+    }
+
+    const refreshLeadHours = hasRefreshLead ? Number(body.refreshLeadHours) : null;
+    if (hasRefreshLead && (!Number.isInteger(refreshLeadHours)
       || refreshLeadHours < MIN_REFRESH_LEAD_HOURS
-      || refreshLeadHours > MAX_REFRESH_LEAD_HOURS) {
+      || refreshLeadHours > MAX_REFRESH_LEAD_HOURS)) {
       return reply.code(400).send({ error: `Refresh lead time must be ${MIN_REFRESH_LEAD_HOURS}-${MAX_REFRESH_LEAD_HOURS} hours` });
     }
-    setRefreshLeadHours(db, refreshLeadHours);
+    const currentQuota = getSessionQuotaSettings(db);
+    const quota = {
+      autoDisable: Object.hasOwn(body, 'sessionQuotaAutoDisable')
+        ? body.sessionQuotaAutoDisable : currentQuota.autoDisable,
+      thresholdPercent: Object.hasOwn(body, 'sessionQuotaThresholdPercent')
+        ? Number(body.sessionQuotaThresholdPercent) : currentQuota.thresholdPercent,
+      autoEnable: Object.hasOwn(body, 'sessionQuotaAutoEnable')
+        ? body.sessionQuotaAutoEnable : currentQuota.autoEnable,
+    };
+    if (hasQuotaSetting && (typeof quota.autoDisable !== 'boolean' || typeof quota.autoEnable !== 'boolean')) {
+      return reply.code(400).send({ error: 'Session quota auto-enable and auto-disable must be booleans' });
+    }
+    if (hasQuotaSetting && (!Number.isInteger(quota.thresholdPercent)
+      || quota.thresholdPercent < MIN_SESSION_QUOTA_THRESHOLD
+      || quota.thresholdPercent > MAX_SESSION_QUOTA_THRESHOLD)) {
+      return reply.code(400).send({ error: `Session quota threshold must be ${MIN_SESSION_QUOTA_THRESHOLD}-${MAX_SESSION_QUOTA_THRESHOLD} percent` });
+    }
+
+    if (hasRefreshLead) setRefreshLeadHours(db, refreshLeadHours);
+    if (hasQuotaSetting) setSessionQuotaSettings(db, quota);
+    const updatedQuota = getSessionQuotaSettings(db);
+    const updated = {
+      refreshLeadHours: getRefreshLeadHours(db, config),
+      sessionQuotaAutoDisable: updatedQuota.autoDisable,
+      sessionQuotaThresholdPercent: updatedQuota.thresholdPercent,
+      sessionQuotaAutoEnable: updatedQuota.autoEnable,
+    };
     audit(db, {
       actorId: request.user.id, action: 'admin.update_settings', targetType: 'setting',
-      targetId: 'refresh_lead_hours', detail: String(refreshLeadHours), ip: request.ip,
+      targetId: hasQuotaSetting && !hasRefreshLead ? 'session_quota_automation' : 'portal',
+      detail: JSON.stringify(updated), ip: request.ip,
     });
-    return { refreshLeadHours };
+    return updated;
   });
 
   app.get('/api/admin/users', async (request, reply) => {

@@ -41,6 +41,7 @@ export function loadConfig(overrides = {}) {
     // checks every five minutes.
     refreshLeadMinutes: integer('REFRESH_LEAD_MINUTES', 480),
     refreshIntervalMinutes: integer('REFRESH_INTERVAL_MINUTES', 5),
+    quotaCheckIntervalMinutes: integer('QUOTA_CHECK_INTERVAL_MINUTES', 5),
     initialAdminUsername: process.env.INIT_ADMIN_USERNAME || 'admin',
     initialAdminPassword: process.env.INIT_ADMIN_PASSWORD || '',
     claude: {

@@ -136,6 +136,11 @@ async function loadQuotas() {
       state.quotas[account.id] = { plan: null, quotas: {} };
     }
   }));
+  // The background quota policy may have changed desired/router state while
+  // this page was open, so refresh the connection rows with each quota poll.
+  try {
+    [state.accounts, state.routers] = await Promise.all([api('/api/accounts'), api('/api/router-status')]);
+  } catch { /* keep the last rendered connection state */ }
   render();
   scheduleQuotaRefresh();
 }
@@ -215,7 +220,10 @@ function providerCard(provider, title, subtitle) {
 function providersView() {
   const rows = state.accounts.map((account) => '<tr><td><div class="account-name">' +
     providerIcon(account.provider) + '<div><strong>' + esc(account.displayName) + '</strong><small>' +
-    'Sponsored by: ' + esc(account.owner) + ' · Portal ID: ' + account.id + '</small></div></div></td><td>' + esc(account.provider === 'claude' ? 'Claude Code' : 'Codex') +
+    'Sponsored by: ' + esc(account.owner) + ' · Portal ID: ' + account.id + '</small>' +
+    (account.quotaAutoDisabled ? '<small class="quota-policy">Auto-disabled by session quota' +
+      (account.quotaSessionResetAt ? ' · reset ' + esc(new Date(account.quotaSessionResetAt).toLocaleString()) : '') + '</small>' : '') +
+    '</div></div></td><td>' + esc(account.provider === 'claude' ? 'Claude Code' : 'Codex') +
     '</td><td>' + statusBadge(account.status) + '</td><td>' +
     statusBadge(account.routers.ninerouter?.status || 'pending') + '</td><td>' +
     statusBadge(account.routers.omniroute?.status || 'pending') + '</td><td>' +
@@ -301,10 +309,22 @@ function adminView() {
     (user.id === state.me.id ? '' : '<button class="danger" data-remove-user="' + user.id + '" data-username="' + esc(user.username) + '">Remove</button>') +
     '</td></tr>').join('');
   const refreshLeadHours = state.settings?.refreshLeadHours ?? 8;
+  const quotaAutoDisable = state.settings?.sessionQuotaAutoDisable ?? true;
+  const quotaThreshold = state.settings?.sessionQuotaThresholdPercent ?? 30;
+  const quotaAutoEnable = state.settings?.sessionQuotaAutoEnable ?? true;
   return '<div class="panel"><div class="panel-head"><div><h2>Token refresh</h2>' +
     '<p>Refresh provider tokens this many hours before expiry. Changes apply to the next scheduler run.</p></div></div>' +
     '<form class="settings-form" id="refresh-settings-form"><label>Before expiry (hours)' +
     '<input id="refresh-lead-hours" type="number" min="1" max="168" step="1" value="' + esc(refreshLeadHours) + '"></label>' +
+    '<button class="primary" type="submit">Save</button></form></div>' +
+    '<div class="panel"><div class="panel-head"><div><h2>Session quota automation</h2>' +
+    '<p>Protect provider accounts using the upstream session quota window.</p></div></div>' +
+    '<form class="quota-settings-form" id="quota-settings-form">' +
+    '<label class="check-setting"><input id="quota-auto-disable" type="checkbox"' + (quotaAutoDisable ? ' checked' : '') + '>' +
+    '<span><b>Auto-disable</b><small>Disable an account when remaining session quota reaches the threshold.</small></span></label>' +
+    '<label>Remaining threshold (%)<input id="quota-threshold" type="number" min="0" max="100" step="1" value="' + esc(quotaThreshold) + '"></label>' +
+    '<label class="check-setting"><input id="quota-auto-enable" type="checkbox"' + (quotaAutoEnable ? ' checked' : '') + '>' +
+    '<span><b>Auto-enable after reset</b><small>Only accounts disabled by this policy are enabled again.</small></span></label>' +
     '<button class="primary" type="submit">Save</button></form></div>' +
     '<div class="panel"><div class="panel-head"><div><h2>User management</h2><p>Create, reset password, disable, or remove users.</p></div></div>' +
     '<form class="create-user" id="create-user-form"><label>Username<input id="new-user" placeholder="username" autocomplete="off"></label>' +
@@ -498,6 +518,7 @@ function bind() {
   if ($('audit-next')) $('audit-next').onclick = async () => { await loadAudit(state.audit.page + 1); render(); };
   if ($('create-user-form')) $('create-user-form').onsubmit = (event) => { event.preventDefault(); createUser(); };
   if ($('refresh-settings-form')) $('refresh-settings-form').onsubmit = (event) => { event.preventDefault(); updateRefreshSettings(); };
+  if ($('quota-settings-form')) $('quota-settings-form').onsubmit = (event) => { event.preventDefault(); updateQuotaSettings(); };
   if ($('traffic-close')) $('traffic-close').onclick = closeModal;
   if ($('close-modal')) $('close-modal').onclick = closeModal;
   if ($('open-oauth')) $('open-oauth').onclick = () => window.open(state.modal.url, 'portal_oauth', 'width=680,height=760');
@@ -639,6 +660,22 @@ async function updateRefreshSettings() {
       body: JSON.stringify({ refreshLeadHours: Number($('refresh-lead-hours').value) }),
     });
     state.message = { text: 'Token refresh lead time updated.', kind: 'ok' };
+    render();
+  });
+}
+
+async function updateQuotaSettings() {
+  const button = $('quota-settings-form').querySelector('button[type=submit]');
+  await act(button, async () => {
+    state.settings = await api('/api/admin/settings', {
+      method: 'PATCH',
+      body: JSON.stringify({
+        sessionQuotaAutoDisable: $('quota-auto-disable').checked,
+        sessionQuotaThresholdPercent: Number($('quota-threshold').value),
+        sessionQuotaAutoEnable: $('quota-auto-enable').checked,
+      }),
+    });
+    state.message = { text: 'Session quota automation updated.', kind: 'ok' };
     render();
   });
 }

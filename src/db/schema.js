@@ -52,6 +52,8 @@ CREATE TABLE IF NOT EXISTS provider_accounts (
   access_expires_at TEXT,
   last_refresh_at TEXT,
   last_refresh_error TEXT,
+  quota_auto_disabled INTEGER NOT NULL DEFAULT 0 CHECK (quota_auto_disabled IN (0, 1)),
+  quota_session_reset_at TEXT,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   UNIQUE(provider, upstream_subject)

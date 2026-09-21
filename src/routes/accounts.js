@@ -58,7 +58,8 @@ export default async function accountRoutes(app, { db, config, adapters, oauthFe
         accountId = target.id;
         db.prepare(`
           UPDATE provider_accounts SET display_name = ?, credential_envelope = ?, credential_status = 'active',
-            desired_enabled = 1, token_version = token_version + 1, access_expires_at = ?,
+            desired_enabled = 1, quota_auto_disabled = 0, quota_session_reset_at = NULL,
+            token_version = token_version + 1, access_expires_at = ?,
             last_refresh_at = CURRENT_TIMESTAMP, last_refresh_error = NULL,
             updated_at = CURRENT_TIMESTAMP WHERE id = ?
         `).run(identity.label, envelope, tokenSet.expiresAt, accountId);
@@ -96,6 +97,7 @@ export default async function accountRoutes(app, { db, config, adapters, oauthFe
     const query = db.prepare(`
       SELECT a.id, a.provider, a.display_name, a.desired_enabled, a.credential_status,
              a.access_expires_at, a.last_refresh_at, a.last_refresh_error,
+             a.quota_auto_disabled, a.quota_session_reset_at,
              a.created_at, a.updated_at, u.username AS owner_username
       FROM provider_accounts a JOIN users u ON u.id = a.owner_id
       ${ownerFilter}
@@ -123,6 +125,8 @@ export default async function accountRoutes(app, { db, config, adapters, oauthFe
         accessExpiresAt: row.access_expires_at,
         lastRefreshAt: row.last_refresh_at,
         lastRefreshError: row.last_refresh_error,
+        quotaAutoDisabled: Boolean(row.quota_auto_disabled),
+        quotaSessionResetAt: row.quota_session_reset_at,
         status: aggregateStatus(statusMap),
         routers: states,
         createdAt: row.created_at,
@@ -190,7 +194,14 @@ export default async function accountRoutes(app, { db, config, adapters, oauthFe
     if (request.body.enabled && account.credential_status !== 'active') {
       return reply.code(409).send({ error: 'Account needs OAuth authentication' });
     }
-    db.prepare('UPDATE provider_accounts SET desired_enabled = ?, token_version = token_version + 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
+    // Any explicit user action takes ownership back from quota automation. In
+    // particular, a manual Disable must never be auto-enabled at session reset.
+    db.prepare(`
+      UPDATE provider_accounts
+      SET desired_enabled = ?, quota_auto_disabled = 0, quota_session_reset_at = NULL,
+          token_version = token_version + 1, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `)
       .run(request.body.enabled ? 1 : 0, account.id);
     markPending(db, account.id);
     const result = await reconcileAccount(db, adapters, config, account.id);
@@ -208,9 +219,8 @@ export default async function accountRoutes(app, { db, config, adapters, oauthFe
     return reply.send({ ok: true, routers: await pullRouterState(db, adapters, account.id) });
   });
 
-  // Quota Tracker is deliberately read-only. It has only GET routes; account
-  // state changes remain in the Providers surface. Users can read their own
-  // quota while administrators can inspect every account they operate.
+  // The browser quota endpoint remains read-only. State transitions based on
+  // the session quota are owned by the background automation scheduler.
   app.get('/api/accounts/:id/quota', async (request, reply) => {
     if (!request.user) return reply.code(401).send({ error: 'Not authenticated' });
     const account = accountForUser(db, request.params.id, request.user);
