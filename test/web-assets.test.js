@@ -89,6 +89,10 @@ test('client bundle parses and merges quota into the providers surface', () => {
   assert.match(appScript, /Remove user/);
   assert.match(appScript, /Before expiry \(hours\)/);
   assert.match(appScript, /refresh-settings-form/);
+  assert.match(appScript, /quota-settings-form/);
+  assert.match(appScript, /sessionQuotaAutoDisable/);
+  assert.match(appScript, /sessionQuotaThresholdPercent/);
+  assert.match(appScript, /sessionQuotaAutoEnable/);
   assert.match(appScript, /updateRefreshSettings/);
   assert.match(appScript, /data-role-user/);
   assert.match(appScript, /updateUserRole/);
