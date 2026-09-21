@@ -21,7 +21,7 @@ function quotaClientHelpers(now) {
     setTimeout(_callback, delay) { scheduledDelay = delay; return 1; },
   });
   new vm.Script(appScript.slice(0, initStart) +
-    ';globalThis.quotaTest = { state, quotaName, quotaPercent, quotaResetLabel, scheduleQuotaRefresh };')
+    ';globalThis.quotaTest = { state, quotaName, quotaPercent, quotaResetLabel, formatDateTime, scheduleQuotaRefresh };')
     .runInContext(context);
   return {
     ...context.quotaTest,
@@ -121,6 +121,7 @@ test('quota UI refreshes after reset and labels stale snapshots', () => {
   assert.equal(quota.quotaName('session', 'codex', 'pro'), 'Session (7d)');
   assert.equal(quota.quotaName('weekly', 'codex', 'pro'), 'Weekly (7d)');
   assert.equal(quota.quotaPercent(0.4), '<1%');
+  assert.equal(quota.formatDateTime('2026-09-22T03:30:53'), '22/09/2026, 03:30:53 AM');
   assert.match(quota.quotaResetLabel('2026-09-15T06:00:00.000Z'), /Reset passed/);
 
   quota.state.me = { csrfToken: 'test' };

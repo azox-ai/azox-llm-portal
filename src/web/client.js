@@ -93,6 +93,22 @@ function formatAuditTime(value) {
   return parts.day + '/' + parts.month + '/' + parts.year + ' ' +
     parts.hour + ':' + parts.minute + ':' + parts.second;
 }
+
+// Operational timestamps use dd/MM/yyyy, hh:mm:ss AM/PM. Build from parts
+// because the browser locale otherwise decides the field order.
+function formatDateTime(value, timeZone) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return '—';
+  const parts = Object.fromEntries(new Intl.DateTimeFormat('en-US', {
+    ...(timeZone ? { timeZone } : {}),
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true,
+  }).formatToParts(date).filter((part) => part.type !== 'literal')
+    .map((part) => [part.type, part.value]));
+  return parts.day + '/' + parts.month + '/' + parts.year + ', ' +
+    parts.hour + ':' + parts.minute + ':' + parts.second + ' ' +
+    String(parts.dayPeriod || '').toUpperCase();
+}
 const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (char) =>
   ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
 
@@ -270,7 +286,7 @@ function quotaPolicyPanel() {
 
 function connectionCard(account) {
   const providerName = account.provider === 'claude' ? 'Claude Code' : 'Codex';
-  const expiry = account.accessExpiresAt ? new Date(account.accessExpiresAt).toLocaleString() : 'Not reported';
+  const expiry = account.accessExpiresAt ? formatDateTime(account.accessExpiresAt) : 'Not reported';
   return '<article class="connection-card"><header class="connection-card-head"><div class="account-name">' +
     providerIcon(account.provider) + '<div><h3>' + esc(account.displayName) + '</h3><span class="provider-label">' + esc(providerName) + '</span>' +
     '<small>Sponsored by ' + esc(account.owner) + ' · Portal ID ' + account.id + '</small></div></div>' +
@@ -280,7 +296,7 @@ function connectionCard(account) {
     '<div><span>OmniRoute</span>' + statusBadge(account.routers.omniroute?.status || 'pending') + '</div></div>' +
     '<div class="connection-token"><span>Access token expires</span><strong>' + esc(expiry) + '</strong></div>' +
     (account.quotaAutoDisabled ? '<div class="quota-policy-warning">Auto-disabled by session quota' +
-      (account.quotaSessionResetAt ? ' · reset ' + esc(new Date(account.quotaSessionResetAt).toLocaleString()) : '') + '</div>' : '') +
+      (account.quotaSessionResetAt ? ' · reset ' + esc(formatDateTime(account.quotaSessionResetAt)) : '') + '</div>' : '') +
     quotaStrip(account) +
     '<footer class="connection-actions"><button data-toggle="' + account.id + '" data-enabled="' + (account.enabled ? '0' : '1') + '">' +
     (account.enabled ? 'Disable' : 'Enable') + '</button><button data-retry="' + account.id + '">Sync</button>' +
@@ -326,7 +342,7 @@ function quotaResetLabel(resetAt) {
   const resetMs = Date.parse(resetAt);
   if (!Number.isFinite(resetMs)) return 'Reset: —';
   if (resetMs <= Date.now()) return 'Reset passed · refreshing within 5 min';
-  return 'Reset: ' + new Date(resetMs).toLocaleString();
+  return 'Reset: ' + formatDateTime(resetMs);
 }
 
 function sponsorsView() {
@@ -348,7 +364,7 @@ function sponsorsView() {
 
 function adminView() {
   const userRows = state.users.map((user) => '<tr><td><div><strong>' + esc(user.username) + '</strong><small class="row-sub">' +
-    new Date(user.createdAt).toLocaleString() + '</small></div></td><td><select class="role-select" data-role-user="' + user.id +
+    esc(formatDateTime(user.createdAt)) + '</small></div></td><td><select class="role-select" data-role-user="' + user.id +
     '" data-current-role="' + esc(user.role) + '"><option value="user"' + (user.role === 'user' ? ' selected' : '') +
     '>user</option><option value="admin"' + (user.role === 'admin' ? ' selected' : '') + '>admin</option></select></td><td>' + user.accountCount +
     '</td><td>' + statusBadge(user.disabled ? 'disabled' : 'active') + '</td><td class="actions">' +
