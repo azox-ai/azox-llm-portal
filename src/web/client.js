@@ -277,15 +277,15 @@ function quotaPolicyPanel() {
   const defaultsText = 'Admin defaults: auto-disable ' + (defaults.sessionQuotaAutoDisable ? 'on' : 'off') +
     ' at ' + defaults.sessionQuotaThresholdPercent + '% remaining; auto-enable ' +
     (defaults.sessionQuotaAutoEnable ? 'on' : 'off') + '.';
-  return '<div class="panel quota-policy-panel"><div class="panel-head"><div><div class="title-with-badge"><h2>My session quota policy</h2>' +
+  return '<div class="panel quota-policy-panel"><div class="panel-head"><div><div class="title-with-badge"><h2>My quota policy</h2>' +
     '<span class="policy-source ' + esc(policy.source) + '">' + (policy.source === 'user' ? 'Custom' : 'Admin defaults') + '</span></div>' +
     '<p>Applies only to provider accounts sponsored by you. ' + esc(defaultsText) + '</p></div></div>' +
     '<form class="quota-settings-form personal-quota-form" id="user-quota-settings-form">' +
     '<div class="policy-settings-grid"><label class="policy-setting policy-switch check-setting">' +
     '<input id="user-quota-auto-disable" type="checkbox" role="switch"' + (policy.sessionQuotaAutoDisable ? ' checked' : '') + '>' +
-    '<span><b>Auto-disable</b><small>Pause my accounts when session quota reaches the threshold.</small></span></label>' +
+    '<span><b>Auto-disable</b><small>Pause my accounts when any quota window reaches the threshold.</small></span></label>' +
     '<label class="policy-setting threshold-setting"><span class="setting-copy"><b>Remaining threshold</b>' +
-    '<small>Pause when session quota reaches this percentage.</small></span>' +
+    '<small>Pause when any quota window reaches this percentage.</small></span>' +
     '<span class="threshold-control"><input id="user-quota-threshold" type="number" min="0" max="100" step="1" ' +
     'aria-label="Remaining threshold percentage" value="' + esc(policy.sessionQuotaThresholdPercent) + '"><i aria-hidden="true">%</i></span></label>' +
     '<label class="policy-setting policy-switch check-setting"><input id="user-quota-auto-enable" type="checkbox" role="switch"' +
@@ -308,7 +308,7 @@ function connectionCard(account) {
     '<div><span>9Router</span>' + statusBadge(account.routers.ninerouter?.status || 'pending') + '</div>' +
     '<div><span>OmniRoute</span>' + statusBadge(account.routers.omniroute?.status || 'pending') + '</div></div>' +
     '<div class="connection-token"><span>Access token expires</span><strong>' + esc(expiry) + '</strong></div>' +
-    (account.quotaAutoDisabled ? '<div class="quota-policy-warning">Auto-disabled by session quota' +
+    (account.quotaAutoDisabled ? '<div class="quota-policy-warning">Auto-disabled by quota' +
       (account.quotaSessionResetAt ? ' · reset ' + esc(formatDateTime(account.quotaSessionResetAt)) : '') + '</div>' : '') +
     quotaStrip(account) +
     '<footer class="connection-actions"><button data-toggle="' + account.id + '" data-enabled="' + (account.enabled ? '0' : '1') + '">' +
@@ -337,7 +337,7 @@ function quotaStrip(account) {
 }
 
 function quotaName(name, provider, plan) {
-  if (name === 'session' && provider === 'codex' && String(plan || '').trim().toLowerCase() === 'pro') return 'Session (7d)';
+  if (name === 'session' && provider === 'codex' && String(plan || '').trim().toLowerCase() === 'pro') return 'Weekly (7d)';
   if (name === 'session') return 'Session (5h)';
   if (name === 'weekly') return 'Weekly (7d)';
   return name;
@@ -394,11 +394,11 @@ function adminView() {
     '<form class="settings-form" id="refresh-settings-form"><label>Before expiry (hours)' +
     '<input id="refresh-lead-hours" type="number" min="1" max="168" step="1" value="' + esc(refreshLeadHours) + '"></label>' +
     '<button class="primary" type="submit">Save</button></form></div>' +
-    '<div class="panel"><div class="panel-head"><div><h2>Session quota automation</h2>' +
-    '<p>Protect provider accounts using the upstream session quota window.</p></div></div>' +
+    '<div class="panel"><div class="panel-head"><div><h2>Quota automation</h2>' +
+    '<p>Protect provider accounts using every upstream quota window.</p></div></div>' +
     '<form class="quota-settings-form" id="quota-settings-form">' +
     '<label class="check-setting"><input id="quota-auto-disable" type="checkbox"' + (quotaAutoDisable ? ' checked' : '') + '>' +
-    '<span><b>Auto-disable</b><small>Disable an account when remaining session quota reaches the threshold.</small></span></label>' +
+    '<span><b>Auto-disable</b><small>Disable an account when any remaining quota reaches the threshold.</small></span></label>' +
     '<label>Remaining threshold (%)<input id="quota-threshold" type="number" min="0" max="100" step="1" value="' + esc(quotaThreshold) + '"></label>' +
     '<label class="check-setting"><input id="quota-auto-enable" type="checkbox"' + (quotaAutoEnable ? ' checked' : '') + '>' +
     '<span><b>Auto-enable after reset</b><small>Only accounts disabled by this policy are enabled again.</small></span></label>' +
@@ -760,7 +760,7 @@ async function updateQuotaSettings() {
         sessionQuotaAutoEnable: $('quota-auto-enable').checked,
       }),
     });
-    state.message = { text: 'Session quota automation updated.', kind: 'ok' };
+    state.message = { text: 'Quota automation updated.', kind: 'ok' };
     render();
   });
 }
@@ -775,7 +775,7 @@ async function updateMyQuotaSettings() {
         sessionQuotaAutoEnable: $('user-quota-auto-enable').checked,
       }),
     });
-    state.message = { text: 'Your session quota policy was updated.', kind: 'ok' };
+    state.message = { text: 'Your quota policy was updated.', kind: 'ok' };
     render();
   });
 }

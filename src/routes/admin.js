@@ -21,7 +21,7 @@ const ACTION_LABELS = {
   'account.enabled': 'account enabled',
   'account.disabled': 'account disabled',
   'account.auto_enabled_quota': 'account auto-enabled after quota reset',
-  'account.auto_disabled_quota': 'account auto-disabled by session quota',
+  'account.auto_disabled_quota': 'account auto-disabled by quota',
   'account.removed': 'account removed',
   'account.remove_failed': 'account removal failed',
   'admin.create_user': 'user created',
@@ -95,12 +95,12 @@ export default async function adminRoutes(app, { db, adapters, config }) {
         ? body.sessionQuotaAutoEnable : currentQuota.autoEnable,
     };
     if (hasQuotaSetting && (typeof quota.autoDisable !== 'boolean' || typeof quota.autoEnable !== 'boolean')) {
-      return reply.code(400).send({ error: 'Session quota auto-enable and auto-disable must be booleans' });
+      return reply.code(400).send({ error: 'Quota auto-enable and auto-disable must be booleans' });
     }
     if (hasQuotaSetting && (!Number.isInteger(quota.thresholdPercent)
       || quota.thresholdPercent < MIN_SESSION_QUOTA_THRESHOLD
       || quota.thresholdPercent > MAX_SESSION_QUOTA_THRESHOLD)) {
-      return reply.code(400).send({ error: `Session quota threshold must be ${MIN_SESSION_QUOTA_THRESHOLD}-${MAX_SESSION_QUOTA_THRESHOLD} percent` });
+      return reply.code(400).send({ error: `Quota threshold must be ${MIN_SESSION_QUOTA_THRESHOLD}-${MAX_SESSION_QUOTA_THRESHOLD} percent` });
     }
 
     if (hasRefreshLead) setRefreshLeadHours(db, refreshLeadHours);

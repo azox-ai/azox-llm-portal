@@ -65,12 +65,12 @@ export function getSessionQuotaSettings(db) {
 }
 
 export function validateSessionQuotaSettings({ autoDisable, thresholdPercent, autoEnable }) {
-  if (typeof autoDisable !== 'boolean') throw new TypeError('Session quota auto-disable must be a boolean');
-  if (typeof autoEnable !== 'boolean') throw new TypeError('Session quota auto-enable must be a boolean');
+  if (typeof autoDisable !== 'boolean') throw new TypeError('Quota auto-disable must be a boolean');
+  if (typeof autoEnable !== 'boolean') throw new TypeError('Quota auto-enable must be a boolean');
   if (!Number.isInteger(thresholdPercent)
     || thresholdPercent < MIN_SESSION_QUOTA_THRESHOLD
     || thresholdPercent > MAX_SESSION_QUOTA_THRESHOLD) {
-    throw new RangeError(`Session quota threshold must be ${MIN_SESSION_QUOTA_THRESHOLD}-${MAX_SESSION_QUOTA_THRESHOLD} percent`);
+    throw new RangeError(`Quota threshold must be ${MIN_SESSION_QUOTA_THRESHOLD}-${MAX_SESSION_QUOTA_THRESHOLD} percent`);
   }
   return { autoDisable, thresholdPercent, autoEnable };
 }
