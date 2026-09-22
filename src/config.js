@@ -17,7 +17,7 @@ function requiredInProduction(name, fallback) {
 export function loadConfig(overrides = {}) {
   const production = process.env.NODE_ENV === 'production';
   // Whether browsers reach the portal over TLS. This is NOT the same question
-  // as NODE_ENV: the zbs3 deployment runs NODE_ENV=production but is served as
+  // as NODE_ENV: the zbs0 deployment runs NODE_ENV=production but is served as
   // plain HTTP on a Tailscale address. Conflating the two broke the UI outright
   // — `secure` cookies were dropped by the browser so no session could be
   // stored, and helmet's `upgrade-insecure-requests` rewrote /app.js and
