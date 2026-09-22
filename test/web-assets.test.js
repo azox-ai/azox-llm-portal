@@ -98,7 +98,7 @@ test('client bundle parses and renders quota inside provider connection cards', 
   assert.match(appScript, /policy-settings-grid/);
   assert.match(appScript, /policy-form-footer/);
   assert.match(appScript, /type="checkbox" role="switch"/);
-  assert.match(appScript, /My session quota policy/);
+  assert.match(appScript, /My quota policy/);
   assert.match(appScript, /Use admin defaults/);
   assert.match(appScript, /\/api\/me\/quota-settings/);
   assert.match(appScript, /updateMyQuotaSettings/);
@@ -123,7 +123,7 @@ test('quota UI refreshes after reset and labels stale snapshots', () => {
   const quota = quotaClientHelpers(now);
   assert.equal(quota.quotaName('session', 'claude', 'max'), 'Session (5h)');
   assert.equal(quota.quotaName('session', 'codex', 'plus'), 'Session (5h)');
-  assert.equal(quota.quotaName('session', 'codex', 'pro'), 'Session (7d)');
+  assert.equal(quota.quotaName('session', 'codex', 'pro'), 'Weekly (7d)');
   assert.equal(quota.quotaName('weekly', 'codex', 'pro'), 'Weekly (7d)');
   assert.equal(quota.quotaPercent(0.4), '<1%');
   assert.equal(quota.formatDateTime('2026-09-22T03:30:53'), '22/09/2026, 03:30:53 AM');

@@ -9,18 +9,25 @@ function fetchForProvider(fetchByProvider, provider) {
   return fetchByProvider?.[provider] || fetch;
 }
 
-function sessionHasReset(account, session, now) {
+function quotaHasReset(account, window, now) {
   const previousReset = Date.parse(account.quota_session_reset_at || '');
-  const currentReset = Date.parse(session.resetAt || '');
+  const currentReset = Date.parse(window.resetAt || '');
   if (Number.isFinite(previousReset)) {
     return (Number.isFinite(currentReset) && currentReset > previousReset) || now >= previousReset;
   }
   // Both supported providers normally return a reset timestamp. If one omits
   // it, only a fully replenished window is strong enough evidence to re-enable.
-  return Number(session.remaining) >= 99.9;
+  return Number(window.remaining) >= 99.9;
 }
 
-async function setAutomatedState(db, adapters, config, account, enabled, session, thresholdPercent) {
+function limitingQuotaWindow(quota) {
+  return Object.entries(quota.quotas || {})
+    .map(([name, window]) => ({ name, ...window, remaining: Number(window?.remaining) }))
+    .filter((window) => Number.isFinite(window.remaining))
+    .sort((a, b) => a.remaining - b.remaining)[0] || null;
+}
+
+async function setAutomatedState(db, adapters, config, account, enabled, window, thresholdPercent) {
   const changed = enabled
     ? db.prepare(`
       UPDATE provider_accounts
@@ -33,7 +40,7 @@ async function setAutomatedState(db, adapters, config, account, enabled, session
       SET desired_enabled = 0, quota_auto_disabled = 1, quota_session_reset_at = ?,
           token_version = token_version + 1, updated_at = CURRENT_TIMESTAMP
       WHERE id = ? AND desired_enabled = 1
-    `).run(session.resetAt || null, account.id).changes;
+    `).run(window.resetAt || null, account.id).changes;
   if (!changed) return false;
 
   markPending(db, account.id);
@@ -51,9 +58,10 @@ async function setAutomatedState(db, adapters, config, account, enabled, session
     targetType: 'account',
     targetId: account.id,
     detail: JSON.stringify({
-      remaining: session.remaining,
+      window: window.name,
+      remaining: window.remaining,
       thresholdPercent,
-      resetAt: session.resetAt || null,
+      resetAt: window.resetAt || null,
     }),
   });
   return true;
@@ -133,21 +141,24 @@ export async function runQuotaAutomationTick(
         fetchForProvider(fetchByProvider, account.provider),
       );
       result.checked += 1;
-      const session = quota.quotas?.session;
-      const remaining = Number(session?.remaining);
-      if (!session || !Number.isFinite(remaining)) continue;
+      // An account is only usable while every upstream quota window has
+      // capacity. Pick the lowest remaining window so a depleted weekly limit
+      // cannot be masked by a replenished 5-hour/session limit.
+      const limitingWindow = limitingQuotaWindow(quota);
+      if (!limitingWindow) continue;
+      const remaining = limitingWindow.remaining;
 
       if (settings.autoDisable && account.desired_enabled === 1
         && remaining <= settings.thresholdPercent) {
         if (await setAutomatedState(
-          db, adapters, config, account, false, session, settings.thresholdPercent,
+          db, adapters, config, account, false, limitingWindow, settings.thresholdPercent,
         )) result.disabled += 1;
         continue;
       }
       if (settings.autoEnable && account.desired_enabled === 0 && account.quota_auto_disabled === 1
-        && remaining > settings.thresholdPercent && sessionHasReset(account, session, now)) {
+        && remaining > settings.thresholdPercent && quotaHasReset(account, limitingWindow, now)) {
         if (await setAutomatedState(
-          db, adapters, config, account, true, session, settings.thresholdPercent,
+          db, adapters, config, account, true, limitingWindow, settings.thresholdPercent,
         )) result.enabled += 1;
       }
     } catch {

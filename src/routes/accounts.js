@@ -220,7 +220,7 @@ export default async function accountRoutes(app, { db, config, adapters, oauthFe
   });
 
   // The browser quota endpoint remains read-only. State transitions based on
-  // the session quota are owned by the background automation scheduler.
+  // upstream quota windows are owned by the background automation scheduler.
   app.get('/api/accounts/:id/quota', async (request, reply) => {
     if (!request.user) return reply.code(401).send({ error: 'Not authenticated' });
     const account = accountForUser(db, request.params.id, request.user);

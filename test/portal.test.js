@@ -495,6 +495,65 @@ test('session quota automation disables at the threshold and enables after reset
   );
 });
 
+test('quota automation disables an account when its weekly window is depleted', async (t) => {
+  const now = Date.parse('2030-01-01T00:00:00.000Z');
+  const weeklyReset = new Date(now + 7 * 24 * 60 * 60_000).toISOString();
+  const { app, db, config, adapters } = await testApp();
+  t.after(() => { app.close(); db.close(); });
+  const ownerId = await seedUser(db, 'weekly-quota-owner');
+  const accountId = Number(db.prepare(`
+    INSERT INTO provider_accounts
+      (owner_id, provider, upstream_subject, display_name, credential_envelope)
+    VALUES (?, 'claude', 'weekly-quota-subject', 'Weekly Quota Claude', ?)
+  `).run(
+    ownerId,
+    encryptJson({ accessToken: 'weekly-quota-access' }, config.encryptionKey),
+  ).lastInsertRowid);
+  let weeklyUtilization = 100;
+  const quotaFetch = {
+    claude: async () => new Response(JSON.stringify({
+      five_hour: { utilization: 0, resets_at: null },
+      seven_day: { utilization: weeklyUtilization, resets_at: weeklyReset },
+    }), { status: 200 }),
+  };
+
+  const disabled = await runQuotaAutomationTick(db, adapters, config, quotaFetch, now);
+  assert.deepEqual(disabled, { checked: 1, disabled: 1, enabled: 0, failed: 0 });
+  assert.deepEqual(
+    { ...db.prepare(`
+      SELECT desired_enabled, quota_auto_disabled, quota_session_reset_at
+      FROM provider_accounts WHERE id = ?
+    `).get(accountId) },
+    { desired_enabled: 0, quota_auto_disabled: 1, quota_session_reset_at: weeklyReset },
+  );
+  assert.deepEqual(
+    db.prepare('SELECT router, sync_status FROM router_connections WHERE account_id = ? ORDER BY router')
+      .all(accountId).map((row) => ({ ...row })),
+    [
+      { router: 'ninerouter', sync_status: 'disabled' },
+      { router: 'omniroute', sync_status: 'disabled' },
+    ],
+  );
+  const auditEntry = db.prepare(`
+    SELECT detail FROM audit_log
+    WHERE target_id = ? AND action = 'account.auto_disabled_quota'
+  `).get(String(accountId));
+  assert.equal(JSON.parse(auditEntry.detail).window, 'weekly');
+
+  weeklyUtilization = 0;
+  const enabled = await runQuotaAutomationTick(
+    db, adapters, config, quotaFetch, Date.parse(weeklyReset) + 1,
+  );
+  assert.deepEqual(enabled, { checked: 1, disabled: 0, enabled: 1, failed: 0 });
+  assert.deepEqual(
+    { ...db.prepare(`
+      SELECT desired_enabled, quota_auto_disabled, quota_session_reset_at
+      FROM provider_accounts WHERE id = ?
+    `).get(accountId) },
+    { desired_enabled: 1, quota_auto_disabled: 0, quota_session_reset_at: null },
+  );
+});
+
 test('session quota automation never enables a manually disabled account', async (t) => {
   let quotaCalls = 0;
   const { app, db, config, adapters } = await testApp();
