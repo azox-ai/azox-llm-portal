@@ -54,6 +54,8 @@ test('client bundle parses and renders quota inside provider connection cards', 
   for (const label of ['Providers', 'Sponsors', 'Admin', 'Audit log']) assert.match(appScript, new RegExp(label));
   // Quota Tracker is no longer a separate tab: it renders inside each account card.
   assert.match(appScript, /connections-grid/);
+  assert.match(appScript, /connection-provider-filter/);
+  assert.match(appScript, /data-connection-filter/);
   assert.match(appScript, /connection-card/);
   assert.match(appScript, /quota-meter/);
   assert.match(appScript, /quotaStrip/);
@@ -188,6 +190,8 @@ test('served assets contain the 9Router-inspired portal shell', () => {
   assert.match(styles, /\.modal-overlay/);
   // Connections reflow from a two-column dashboard grid to one column.
   assert.match(styles, /\.connections-grid\{display:grid;grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
+  assert.match(styles, /\.connection-toolbar\{display:flex;align-items:center;gap:10px;flex-wrap:wrap\}/);
+  assert.match(styles, /\.connection-filter-chip/);
   assert.match(styles, /@media\(max-width:1120px\)\{\s*\.connections-grid\{grid-template-columns:1fr\}/);
   assert.match(styles, /\.connection-card\{[^}]*border:1px solid var\(--border\)/);
   assert.match(styles, /\.connection-statuses\{display:grid;grid-template-columns:repeat\(3,minmax\(0,1fr\)\)/);

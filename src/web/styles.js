@@ -129,7 +129,12 @@ tr:hover td{background:var(--bg-alt)}
 .readonly span{background:var(--info);color:#fff;border-radius:5px;padding:2px 7px;font-size:10px;text-transform:uppercase;letter-spacing:.6px}
 
 /* --------------------------------------------------------- connections */
+.connection-toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .connection-count{font-size:11px;color:var(--muted);border:1px solid var(--border);border-radius:999px;padding:4px 10px}
+.connection-filter-group{display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap}
+.connection-filter-chip{display:inline-flex;align-items:center;gap:5px;width:auto;margin:0;padding:6px 11px;border:1px solid var(--border-strong);border-radius:999px;background:var(--surface);color:var(--muted);font:inherit;font-size:12px;font-weight:500;cursor:pointer}
+.connection-filter-chip.active{border-color:var(--brand);background:var(--brand-soft);color:var(--brand)}
+.connection-filter-chip.active::before{content:'✓';font-size:10px;font-weight:700}
 .connections-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;padding:18px;background:var(--bg-alt)}
 .connection-card{min-width:0;border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--surface);overflow:hidden;box-shadow:var(--shadow-soft)}
 .connection-card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:15px 16px;border-bottom:1px solid var(--border-subtle)}
