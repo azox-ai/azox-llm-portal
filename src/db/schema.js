@@ -13,6 +13,14 @@ CREATE TABLE IF NOT EXISTS users (
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) STRICT;
 
+CREATE TABLE IF NOT EXISTS user_quota_settings (
+  user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  auto_disable INTEGER NOT NULL CHECK (auto_disable IN (0, 1)),
+  threshold_percent INTEGER NOT NULL CHECK (threshold_percent BETWEEN 0 AND 100),
+  auto_enable INTEGER NOT NULL CHECK (auto_enable IN (0, 1)),
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+) STRICT;
+
 CREATE TABLE IF NOT EXISTS sessions (
   token_hash TEXT PRIMARY KEY,
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -52,6 +60,8 @@ CREATE TABLE IF NOT EXISTS provider_accounts (
   access_expires_at TEXT,
   last_refresh_at TEXT,
   last_refresh_error TEXT,
+  quota_auto_disabled INTEGER NOT NULL DEFAULT 0 CHECK (quota_auto_disabled IN (0, 1)),
+  quota_session_reset_at TEXT,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   UNIQUE(provider, upstream_subject)

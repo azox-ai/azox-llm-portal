@@ -14,7 +14,11 @@ Internal account portal for the `llm-gateway` Docker stack.
   inspect and operate every provider account.
 - Account labels are the full upstream email or account name, unmasked, and
   every surface shows `Sponsored by: <portal user>` beneath it.
-- Quota Tracker reads upstream quota and exposes no state-changing actions.
+- Quota Tracker reads upstream quota. A background policy checks the session
+  window every five minutes, auto-disables accounts at or below the configured
+  remaining-percent threshold (30% by default), and auto-enables only those
+  policy-disabled accounts after the session resets. Both actions default on
+  and can be changed by an administrator.
 - Portal is the canonical credential owner. Its admin-configured refresh lead is
   read on every scheduler tick, with a 10-minute minimum gap between successful
   refreshes of the same account. It keeps the refresh token encrypted at rest

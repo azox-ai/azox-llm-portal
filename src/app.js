@@ -10,11 +10,13 @@ import { buildAdapters } from './adapters/router-adapter.js';
 import authRoutes from './routes/auth.js';
 import accountRoutes from './routes/accounts.js';
 import adminRoutes from './routes/admin.js';
+import preferenceRoutes from './routes/preferences.js';
 import { renderApp } from './web/page.js';
 import {
   assets, IMMUTABLE_CACHE_CONTROL, NO_STORE_CACHE_CONTROL,
 } from './web/assets.js';
 import { startRefreshScheduler } from './services/refresh.js';
+import { startQuotaAutomationScheduler } from './services/quota-automation.js';
 import { restoreFullAccountLabels } from './services/sync.js';
 
 const MUTATING = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
@@ -91,12 +93,20 @@ export async function buildApp(options = {}) {
   await app.register(authRoutes, { db, config });
   await app.register(accountRoutes, { db, config, adapters, oauthFetch: options.oauthFetch });
   await app.register(adminRoutes, { db, adapters, config });
+  await app.register(preferenceRoutes, { db });
 
   await restoreFullAccountLabels(db, adapters, config);
 
   const stopRefreshScheduler = options.startScheduler === false
     ? () => {}
     : startRefreshScheduler(db, adapters, config, options.refreshFetch);
+  const quotaFetch = options.quotaFetch || {
+    claude: options.oauthFetch?.claudeQuota,
+    codex: options.oauthFetch?.codexQuota,
+  };
+  const stopQuotaAutomationScheduler = options.startScheduler === false
+    ? () => {}
+    : startQuotaAutomationScheduler(db, adapters, config, quotaFetch);
 
   // The shell must never be cached: it is the only document that knows which
   // fingerprinted asset URLs the current build uses.
@@ -128,6 +138,7 @@ export async function buildApp(options = {}) {
 
   app.addHook('onClose', async () => {
     stopRefreshScheduler();
+    stopQuotaAutomationScheduler();
     if (!options.db) db.close();
   });
   return { app, db, config, adapters };
