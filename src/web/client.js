@@ -16,6 +16,7 @@ const state = {
   passwordError: null,
   loginError: null,
   loginNotice: null,
+  connectionFilter: 'all',
   quotaRefreshTimer: null,
 };
 
@@ -239,7 +240,9 @@ function providerCard(provider, title, subtitle) {
 }
 
 function providersView() {
-  const cards = state.accounts.map(connectionCard).join('');
+  const filter = state.connectionFilter || 'all';
+  const visibleAccounts = state.accounts.filter((account) => filter === 'all' || account.provider === filter);
+  const cards = visibleAccounts.map(connectionCard).join('');
   const missingRouters = ['ninerouter', 'omniroute'].filter((router) => !state.routers[router]?.configured);
   return (missingRouters.length ? '<div class="notice bad">Router sync is not configured: ' + esc(missingRouters.join(', ')) + '.</div>' : '') +
     '<div class="panel"><div class="panel-head"><div><h2>Add provider</h2></div></div>' +
@@ -248,9 +251,14 @@ function providersView() {
     quotaPolicyPanel() +
     '<div class="panel connections-panel"><div class="panel-head"><div><h2>Connections</h2>' +
     '<p>Provider health, router sync, quota and controls in one place.</p></div>' +
-    '<span class="connection-count">' + state.accounts.length + ' connected</span></div>' +
+    '<div class="connection-toolbar"><div class="connection-filter-group" id="connection-provider-filter" role="group" aria-label="Filter connections by provider">' +
+    '<button type="button" class="connection-filter-chip' + (filter === 'all' ? ' active' : '') + '" data-connection-filter="all" aria-pressed="' + (filter === 'all') + '">All</button>' +
+    '<button type="button" class="connection-filter-chip' + (filter === 'claude' ? ' active' : '') + '" data-connection-filter="claude" aria-pressed="' + (filter === 'claude') + '">Claude Code</button>' +
+    '<button type="button" class="connection-filter-chip' + (filter === 'codex' ? ' active' : '') + '" data-connection-filter="codex" aria-pressed="' + (filter === 'codex') + '">Codex</button>' +
+    '</div>' +
+    '<span class="connection-count">' + visibleAccounts.length + ' connected</span></div></div>' +
     (cards ? '<div class="connections-grid">' + cards + '</div>' :
-      '<div class="empty">No provider connections yet.</div>') + '</div>';
+      '<div class="empty">' + (filter === 'all' ? 'No provider connections yet.' : 'No connections for this provider.') + '</div>') + '</div>';
 }
 
 function quotaPolicyPanel() {
@@ -583,6 +591,12 @@ function bind() {
     await loadAdmin(); render();
   }); });
   document.querySelectorAll('[data-role-user]').forEach((element) => { element.onchange = () => updateUserRole(element); });
+  document.querySelectorAll('[data-connection-filter]').forEach((element) => {
+    element.onclick = () => {
+      state.connectionFilter = element.dataset.connectionFilter;
+      render();
+    };
+  });
   if ($('audit-prev')) $('audit-prev').onclick = async () => { await loadAudit(state.audit.page - 1); render(); };
   if ($('audit-next')) $('audit-next').onclick = async () => { await loadAudit(state.audit.page + 1); render(); };
   if ($('create-user-form')) $('create-user-form').onsubmit = (event) => { event.preventDefault(); createUser(); };
