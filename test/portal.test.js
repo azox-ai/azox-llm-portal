@@ -497,6 +497,7 @@ test('session quota automation disables at the threshold and enables after reset
 
 test('quota automation disables an account when its weekly window is depleted', async (t) => {
   const now = Date.parse('2030-01-01T00:00:00.000Z');
+  const sessionReset = new Date(now + 5 * 60 * 60_000).toISOString();
   const weeklyReset = new Date(now + 7 * 24 * 60 * 60_000).toISOString();
   const { app, db, config, adapters } = await testApp();
   t.after(() => { app.close(); db.close(); });
@@ -509,10 +510,11 @@ test('quota automation disables an account when its weekly window is depleted', 
     ownerId,
     encryptJson({ accessToken: 'weekly-quota-access' }, config.encryptionKey),
   ).lastInsertRowid);
-  let weeklyUtilization = 100;
+  let sessionUtilization = 100;
+  let weeklyUtilization = 90;
   const quotaFetch = {
     claude: async () => new Response(JSON.stringify({
-      five_hour: { utilization: 0, resets_at: null },
+      five_hour: { utilization: sessionUtilization, resets_at: sessionReset },
       seven_day: { utilization: weeklyUtilization, resets_at: weeklyReset },
     }), { status: 200 }),
   };
@@ -541,6 +543,15 @@ test('quota automation disables an account when its weekly window is depleted', 
   assert.equal(JSON.parse(auditEntry.detail).window, 'weekly');
 
   weeklyUtilization = 0;
+  const sessionStillDepleted = await runQuotaAutomationTick(
+    db, adapters, config, quotaFetch, now + 1,
+  );
+  assert.deepEqual(
+    sessionStillDepleted,
+    { checked: 1, disabled: 0, enabled: 0, failed: 0 },
+  );
+
+  sessionUtilization = 0;
   const enabled = await runQuotaAutomationTick(
     db, adapters, config, quotaFetch, Date.parse(weeklyReset) + 1,
   );
