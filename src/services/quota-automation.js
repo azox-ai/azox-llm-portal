@@ -20,11 +20,15 @@ function quotaHasReset(account, window, now) {
   return Number(window.remaining) >= 99.9;
 }
 
-function limitingQuotaWindow(quota) {
+const QUOTA_WINDOW_PRIORITY = ['weekly', 'session'];
+
+function quotaWindowsByPriority(quota) {
+  const priority = new Map(QUOTA_WINDOW_PRIORITY.map((name, index) => [name, index]));
   return Object.entries(quota.quotas || {})
     .map(([name, window]) => ({ name, ...window, remaining: Number(window?.remaining) }))
     .filter((window) => Number.isFinite(window.remaining))
-    .sort((a, b) => a.remaining - b.remaining)[0] || null;
+    .sort((a, b) => (priority.get(a.name) ?? priority.size)
+      - (priority.get(b.name) ?? priority.size));
 }
 
 async function setAutomatedState(db, adapters, config, account, enabled, window, thresholdPercent) {
@@ -141,24 +145,26 @@ export async function runQuotaAutomationTick(
         fetchForProvider(fetchByProvider, account.provider),
       );
       result.checked += 1;
-      // An account is only usable while every upstream quota window has
-      // capacity. Pick the lowest remaining window so a depleted weekly limit
-      // cannot be masked by a replenished 5-hour/session limit.
-      const limitingWindow = limitingQuotaWindow(quota);
-      if (!limitingWindow) continue;
-      const remaining = limitingWindow.remaining;
+      // Weekly is the long-term hard limit, so evaluate it first. Session is
+      // still checked next: an account is usable only while every upstream
+      // quota window remains above the configured threshold.
+      const windows = quotaWindowsByPriority(quota);
+      if (!windows.length) continue;
+      const blockedWindow = windows.find(
+        (window) => window.remaining <= settings.thresholdPercent,
+      );
 
       if (settings.autoDisable && account.desired_enabled === 1
-        && remaining <= settings.thresholdPercent) {
+        && blockedWindow) {
         if (await setAutomatedState(
-          db, adapters, config, account, false, limitingWindow, settings.thresholdPercent,
+          db, adapters, config, account, false, blockedWindow, settings.thresholdPercent,
         )) result.disabled += 1;
         continue;
       }
       if (settings.autoEnable && account.desired_enabled === 0 && account.quota_auto_disabled === 1
-        && remaining > settings.thresholdPercent && quotaHasReset(account, limitingWindow, now)) {
+        && !blockedWindow && quotaHasReset(account, windows[0], now)) {
         if (await setAutomatedState(
-          db, adapters, config, account, true, limitingWindow, settings.thresholdPercent,
+          db, adapters, config, account, true, windows[0], settings.thresholdPercent,
         )) result.enabled += 1;
       }
     } catch {
