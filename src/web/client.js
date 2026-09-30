@@ -300,8 +300,16 @@ function quotaPolicyPanel() {
 function connectionCard(account) {
   const providerName = account.provider === 'claude' ? 'Claude Code' : 'Codex';
   const expiry = account.accessExpiresAt ? formatDateTime(account.accessExpiresAt) : 'Not reported';
+  const editAction = account.provider === 'claude'
+    ? '<button class="account-edit" type="button" aria-label="Edit account name" title="Edit account name" data-edit-account="' +
+      account.id + '" data-account-name="' + esc(account.displayName) + '">' +
+      '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ' +
+      'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">' +
+      '<path d="m16 3 5 5M4 20l4-1L21 6a2.12 2.12 0 0 0-3-3L5 16l-1 4Z"/></svg></button>'
+    : '';
   return '<article class="connection-card"><header class="connection-card-head"><div class="account-name">' +
-    providerIcon(account.provider) + '<div><h3>' + esc(account.displayName) + '</h3><span class="provider-label">' + esc(providerName) + '</span>' +
+    providerIcon(account.provider) + '<div><div class="account-title"><h3>' + esc(account.displayName) + '</h3>' + editAction +
+    '</div><span class="provider-label">' + esc(providerName) + '</span>' +
     '<small>Sponsored by ' + esc(account.owner) + ' · Portal ID ' + account.id + '</small></div></div>' +
     statusBadge(account.status) + '</header>' +
     '<div class="connection-statuses"><div><span>Portal</span>' + statusBadge(account.status) + '</div>' +
@@ -462,6 +470,19 @@ function removeUserModal(modal) {
   '<button id="close-modal">Cancel</button><button class="danger" id="confirm-remove-user">Remove user</button>');
 }
 
+function editAccountModal(modal) {
+  const errorId = modal.error ? ' edit-account-error' : '';
+  return modalFrame('Edit Claude account name',
+    '<form id="edit-account-form"><label for="edit-account-name">Account name' +
+    '<input id="edit-account-name" name="displayName" maxlength="120" required aria-describedby="edit-account-hint' +
+    errorId + '" value="' + esc(modal.name) + '"></label>' +
+    '<p class="field-hint" id="edit-account-hint">Use a name that makes this sponsored Claude account easy to identify.</p>' +
+    (modal.error ? '<div class="notice error" id="edit-account-error" role="alert">' + esc(modal.error) + '</div>' : '') +
+    '</form>',
+  '<button id="close-modal" type="button">Cancel</button>' +
+  '<button class="primary" id="confirm-edit-account" type="submit" form="edit-account-form">Save</button>');
+}
+
 function modalFrame(title, body, footer) {
   return '<div class="modal-overlay"><section class="modal" role="dialog" aria-modal="true" aria-label="' + esc(title) + '">' +
     '<div class="modal-head"><div class="traffic"><button class="close" id="traffic-close" aria-label="Close"></button><i class="min"></i><i class="max"></i></div>' +
@@ -473,6 +494,7 @@ function modalView() {
   if (state.modal.type === 'oauth') return oauthModal(state.modal);
   if (state.modal.type === 'reset-password') return resetPasswordModal(state.modal);
   if (state.modal.type === 'remove-user') return removeUserModal(state.modal);
+  if (state.modal.type === 'edit-account') return editAccountModal(state.modal);
   return '';
 }
 
@@ -531,6 +553,14 @@ function render(extra) {
   $('main').innerHTML = banner + content;
   $('modal-root').innerHTML = modalView();
   bind();
+  if ($('edit-account-name') && state.modal?.focusName) {
+    $('edit-account-name').focus();
+    if (state.modal?.selectName) {
+      $('edit-account-name').select();
+      state.modal.selectName = false;
+    }
+    state.modal.focusName = false;
+  }
 }
 
 function closeModal() {
@@ -564,6 +594,15 @@ function bind() {
   });
   document.querySelectorAll('[data-reauth]').forEach((element) => {
     element.onclick = () => startOAuth(element.dataset.provider, Number(element.dataset.reauth));
+  });
+  document.querySelectorAll('[data-edit-account]').forEach((element) => {
+    element.onclick = () => {
+      state.modal = {
+        type: 'edit-account', id: Number(element.dataset.editAccount),
+        name: element.dataset.accountName, error: null, selectName: true, focusName: true,
+      };
+      render();
+    };
   });
   document.querySelectorAll('[data-toggle]').forEach((element) => { element.onclick = () => act(element, async () => {
     await api('/api/accounts/' + element.dataset.toggle + '/state', { method: 'PATCH', body: JSON.stringify({ enabled: element.dataset.enabled === '1' }) });
@@ -609,6 +648,7 @@ function bind() {
   if ($('open-oauth')) $('open-oauth').onclick = () => window.open(state.modal.url, 'portal_oauth', 'width=680,height=760');
   if ($('copy-oauth')) $('copy-oauth').onclick = copyOAuthUrl;
   if ($('complete-oauth')) $('complete-oauth').onclick = completeOAuth;
+  if ($('edit-account-form')) $('edit-account-form').onsubmit = (event) => { event.preventDefault(); updateAccountName(); };
   if ($('confirm-reset')) $('confirm-reset').onclick = resetUserPassword;
   if ($('confirm-remove-user')) $('confirm-remove-user').onclick = removeUser;
 }
@@ -665,6 +705,35 @@ async function completeOAuth() {
     await refresh();
   } catch (error) {
     state.modal.error = error.message;
+    render();
+  }
+}
+
+async function updateAccountName() {
+  const input = $('edit-account-name');
+  const displayName = input.value.trim();
+  state.modal.name = input.value;
+  if (!displayName) {
+    state.modal.error = 'Account name is required.';
+    state.modal.focusName = true;
+    render();
+    return;
+  }
+  const button = $('confirm-edit-account');
+  button.disabled = true;
+  button.textContent = 'Saving…';
+  try {
+    const accountId = state.modal.id;
+    await api('/api/accounts/' + accountId + '/name', {
+      method: 'PATCH', body: JSON.stringify({ displayName }),
+    });
+    state.modal = null;
+    state.message = { text: 'Claude account name updated. Check router sync status below.', kind: 'ok' };
+    await refresh();
+  } catch (error) {
+    state.modal.name = input.value;
+    state.modal.error = error.message;
+    state.modal.focusName = true;
     render();
   }
 }

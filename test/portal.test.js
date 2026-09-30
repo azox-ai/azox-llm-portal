@@ -305,6 +305,84 @@ test('router sync sends access token metadata but never a refresh token', async 
   assert.equal(calls[0].body.displayName, 'Sponsored by: anhth2');
 });
 
+test('router sync uses a renamed Claude label even when its token contains an email', async () => {
+  const calls = [];
+  const adapter = new RouterAdapter('ninerouter', { baseUrl: 'http://router.test', syncToken: 'secret' }, async (_url, init) => {
+    calls.push(JSON.parse(init.body));
+    return new Response(JSON.stringify({ id: 'router-id' }), { status: 200 });
+  });
+  await adapter.sync({
+    id: 5, provider: 'claude', display_name: 'Work Claude', owner_username: 'alice',
+    desired_enabled: 1, credential_status: 'active', token_version: 2,
+  }, { accessToken: 'access', idToken: jwt({ email: 'alice@example.com' }) });
+  assert.equal(calls[0].name, 'Work Claude');
+  assert.equal(calls[0].email, 'alice@example.com');
+});
+
+test('Claude sponsors rename owned accounts and sync both routers', async (t) => {
+  const { app, db, config, adapters } = await testApp();
+  t.after(() => { app.close(); db.close(); });
+  const ownerId = await seedUser(db, 'alice');
+  const accountId = Number(db.prepare(`INSERT INTO provider_accounts
+    (owner_id, provider, upstream_subject, display_name, credential_envelope)
+    VALUES (?, 'claude', 'claude-sub', 'Claude OAuth account', ?)`).run(
+    ownerId, encryptJson({ accessToken: 'access' }, config.encryptionKey),
+  ).lastInsertRowid);
+  const alice = await login(app, 'alice');
+
+  const renamed = await app.inject({
+    method: 'PATCH', url: `/api/accounts/${accountId}/name`, headers: authHeaders(alice),
+    payload: { displayName: '  Work Claude  ' },
+  });
+  assert.equal(renamed.statusCode, 200);
+  assert.equal(renamed.json().displayName, 'Work Claude');
+  assert.deepEqual(renamed.json().routers, { ninerouter: 'active', omniroute: 'active' });
+  assert.deepEqual({ ...db.prepare('SELECT display_name, token_version FROM provider_accounts WHERE id = ?').get(accountId) }, {
+    display_name: 'Work Claude', token_version: 2,
+  });
+  assert.deepEqual(adapters.ninerouter.calls.at(-1), ['sync', accountId, 'access', 2]);
+  assert.deepEqual(adapters.omniroute.calls.at(-1), ['sync', accountId, 'access', 2]);
+  assert.equal(db.prepare("SELECT action FROM audit_log WHERE target_id = ? AND action = 'account.renamed'").get(String(accountId)).action, 'account.renamed');
+  assert.equal((await app.inject({ method: 'GET', url: '/api/accounts', headers: { cookie: alice.cookie } })).json()[0].displayName, 'Work Claude');
+
+  const unchanged = await app.inject({
+    method: 'PATCH', url: `/api/accounts/${accountId}/name`, headers: authHeaders(alice),
+    payload: { displayName: 'Work Claude' },
+  });
+  assert.equal(unchanged.statusCode, 200);
+  assert.equal(db.prepare('SELECT token_version FROM provider_accounts WHERE id = ?').get(accountId).token_version, 2);
+  assert.equal(adapters.ninerouter.calls.length, 1);
+});
+
+test('Claude rename rejects Codex, other owners, and invalid names', async (t) => {
+  const { app, db, config, adapters } = await testApp();
+  t.after(() => { app.close(); db.close(); });
+  const ownerId = await seedUser(db, 'alice');
+  await seedUser(db, 'bob');
+  const insert = db.prepare(`INSERT INTO provider_accounts
+    (owner_id, provider, upstream_subject, display_name, credential_envelope)
+    VALUES (?, ?, ?, ?, ?)`);
+  const claudeId = Number(insert.run(ownerId, 'claude', 'claude-sub', 'Claude OAuth account',
+    encryptJson({ accessToken: 'access' }, config.encryptionKey)).lastInsertRowid);
+  const codexId = Number(insert.run(ownerId, 'codex', 'codex-sub', 'Codex',
+    encryptJson({ accessToken: 'access' }, config.encryptionKey)).lastInsertRowid);
+  const alice = await login(app, 'alice');
+  const bob = await login(app, 'bob');
+  const rename = (id, headers, displayName) => app.inject({
+    method: 'PATCH', url: `/api/accounts/${id}/name`, headers, payload: { displayName },
+  });
+
+  assert.equal((await rename(claudeId, authHeaders(bob), 'Not mine')).statusCode, 404);
+  assert.equal((await rename(codexId, authHeaders(alice), 'New Codex')).statusCode, 400);
+  for (const value of ['', '   ', 'x'.repeat(121), 'line\nfeed', 42]) {
+    assert.equal((await rename(claudeId, authHeaders(alice), value)).statusCode, 400);
+  }
+  assert.equal((await rename(claudeId, {}, 'Anonymous')).statusCode, 401);
+  assert.equal(db.prepare('SELECT display_name FROM provider_accounts WHERE id = ?').get(claudeId).display_name, 'Claude OAuth account');
+  assert.equal(db.prepare('SELECT display_name FROM provider_accounts WHERE id = ?').get(codexId).display_name, 'Codex');
+  assert.equal(adapters.ninerouter.calls.length, 0);
+});
+
 test('reconcile stores the token version acknowledged by 9Router', async () => {
   const { app, db, config, adapters } = await testApp();
   await app.close();

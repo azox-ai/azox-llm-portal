@@ -101,7 +101,12 @@ export class RouterAdapter {
       scope: tokenSet.scope ?? undefined,
       tokenType: tokenSet.tokenType ?? undefined,
       email,
-      name: email || account.display_name || undefined,
+      // Claude identities often expose only the generic provider label. Portal
+      // therefore owns Claude's editable name; Codex keeps its email-first
+      // identity behavior unchanged.
+      name: account.provider === 'claude'
+        ? account.display_name || email || undefined
+        : email || account.display_name || undefined,
       displayName: sponsor,
       enabled: account.desired_enabled === 1 && account.credential_status === 'active',
       tokenVersion: account.token_version,

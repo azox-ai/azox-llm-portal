@@ -49,6 +49,35 @@ function auditClientHelpers() {
   return context.auditTest;
 }
 
+function accountClientHelpers() {
+  const initStart = appScript.indexOf('(async function init()');
+  assert.notEqual(initStart, -1);
+  const context = vm.createContext({});
+  new vm.Script(appScript.slice(0, initStart) +
+    ';globalThis.accountTest = { connectionCard, editAccountModal };')
+    .runInContext(context);
+  return context.accountTest;
+}
+
+test('only Claude cards show Edit icon beside name and dialog escapes account labels', () => {
+  const { connectionCard, editAccountModal } = accountClientHelpers();
+  const account = {
+    id: 1, provider: 'claude', displayName: 'Claude OAuth account', owner: 'alice',
+    enabled: true, status: 'active', routers: {}, quotaAutoDisabled: false,
+  };
+  const claudeCard = connectionCard(account);
+  const codexCard = connectionCard({ ...account, provider: 'codex' });
+  assert.match(claudeCard, /data-edit-account="1"/);
+  assert.match(claudeCard, /<div class="account-title"><h3>Claude OAuth account<\/h3><button class="account-edit"/);
+  assert.match(claudeCard, /aria-label="Edit account name"/);
+  assert.match(claudeCard, /<svg[^>]*aria-hidden="true"/);
+  assert.doesNotMatch(claudeCard.slice(claudeCard.indexOf('<footer')), /data-edit-account|has-edit|>Edit</);
+  assert.doesNotMatch(codexCard, /data-edit-account|has-edit/);
+  assert.match(editAccountModal({ name: '<Claude> & team' }), /value="&lt;Claude&gt; &amp; team"/);
+  assert.match(editAccountModal({ name: 'Claude' }), /form="edit-account-form"/);
+  assert.match(appScript, /\/api\/accounts\/[' ] \+ accountId \+ '\/name'/);
+});
+
 test('client bundle parses and renders quota inside provider connection cards', () => {
   assert.doesNotThrow(() => new vm.Script(appScript));
   for (const label of ['Providers', 'Sponsors', 'Admin', 'Audit log']) assert.match(appScript, new RegExp(label));
