@@ -10,6 +10,8 @@ import {
 } from '../services/sync.js';
 import { fetchQuota } from '../services/quota.js';
 
+const MAX_ACCOUNT_DISPLAY_NAME_LENGTH = 120;
+
 export default async function accountRoutes(app, { db, config, adapters, oauthFetch = {} }) {
   async function completeOauth(request, reply, provider, code, state, redirect) {
     if (!code || !state || !['claude', 'codex'].includes(provider)) {
@@ -56,13 +58,17 @@ export default async function accountRoutes(app, { db, config, adapters, oauthFe
       const envelope = encryptJson(tokenSet, config.encryptionKey);
       if (target) {
         accountId = target.id;
+        // A Claude label can be customized in Portal. Re-authentication rotates
+        // credentials but must not replace that operator-owned label with the
+        // provider's generic "Claude OAuth account" value.
+        const displayName = provider === 'claude' ? target.display_name : identity.label;
         db.prepare(`
           UPDATE provider_accounts SET display_name = ?, credential_envelope = ?, credential_status = 'active',
             desired_enabled = 1, quota_auto_disabled = 0, quota_session_reset_at = NULL,
             token_version = token_version + 1, access_expires_at = ?,
             last_refresh_at = CURRENT_TIMESTAMP, last_refresh_error = NULL,
             updated_at = CURRENT_TIMESTAMP WHERE id = ?
-        `).run(identity.label, envelope, tokenSet.expiresAt, accountId);
+        `).run(displayName, envelope, tokenSet.expiresAt, accountId);
       } else {
         const result = db.prepare(`
           INSERT INTO provider_accounts
@@ -210,6 +216,42 @@ export default async function accountRoutes(app, { db, config, adapters, oauthFe
       targetType: 'account', targetId: account.id, ip: request.ip,
     });
     return reply.send({ ok: true, routers: result });
+  });
+
+  app.patch('/api/accounts/:id/name', async (request, reply) => {
+    if (!request.user) return reply.code(401).send({ error: 'Not authenticated' });
+    const account = accountForUser(db, request.params.id, request.user);
+    if (!account) return reply.code(404).send({ error: 'Account not found' });
+    if (account.provider !== 'claude') {
+      return reply.code(400).send({ error: 'Only Claude account names can be edited' });
+    }
+
+    const displayName = typeof request.body?.displayName === 'string'
+      ? request.body.displayName.trim()
+      : '';
+    if (!displayName) return reply.code(400).send({ error: 'Account name is required' });
+    if (displayName.length > MAX_ACCOUNT_DISPLAY_NAME_LENGTH) {
+      return reply.code(400).send({ error: `Account name must be ${MAX_ACCOUNT_DISPLAY_NAME_LENGTH} characters or fewer` });
+    }
+    if (/[\u0000-\u001F\u007F]/.test(displayName)) {
+      return reply.code(400).send({ error: 'Account name contains unsupported characters' });
+    }
+
+    if (displayName === account.display_name) {
+      return reply.send({ ok: true, displayName, routers: null });
+    }
+    db.prepare(`
+      UPDATE provider_accounts
+      SET display_name = ?, token_version = token_version + 1, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(displayName, account.id);
+    markPending(db, account.id);
+    const routers = await reconcileAccount(db, adapters, config, account.id);
+    audit(db, {
+      actorId: request.user.id, action: 'account.renamed', targetType: 'account', targetId: account.id,
+      detail: JSON.stringify({ previousDisplayName: account.display_name, displayName }), ip: request.ip,
+    });
+    return reply.send({ ok: true, displayName, routers });
   });
 
   app.post('/api/accounts/:id/retry', async (request, reply) => {

@@ -85,6 +85,7 @@ main{max-width:1440px;margin:0 auto;padding:30px 26px 34px}
 button{border:1px solid var(--border);background:var(--surface);color:var(--text);padding:8px 12px;border-radius:var(--radius);cursor:pointer;font-weight:600;font-size:12px;font-family:inherit}
 button:hover:not(:disabled){border-color:var(--brand);color:var(--brand)}
 button:disabled{opacity:.5;cursor:not-allowed}
+button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
 .primary{background:var(--brand);color:#fff;border-color:var(--brand)}
 .primary:hover:not(:disabled){background:var(--brand-hover);border-color:var(--brand-hover);color:#fff}
 .ghost{background:transparent;border-color:transparent;color:var(--muted)}
@@ -141,6 +142,10 @@ tr:hover td{background:var(--bg-alt)}
 .connection-card .account-name{min-width:0;align-items:flex-start}
 .connection-card .account-name>div{min-width:0}
 .connection-card h3{margin:0;font-size:14px;line-height:1.35;overflow-wrap:anywhere}
+.account-title{display:flex;align-items:center;gap:8px;min-width:0}
+.account-title h3{min-width:0}
+.account-edit{display:inline-flex;align-items:center;justify-content:center;flex:0 0 28px;width:28px;height:28px;padding:0;border-color:transparent;background:transparent;color:var(--muted)}
+.account-edit:hover:not(:disabled){background:var(--brand-soft)}
 .connection-card .provider-label{display:block;color:var(--muted);font-size:12px}
 .connection-card .account-name small{overflow-wrap:anywhere}
 .connection-statuses{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;padding:12px 16px;border-bottom:1px solid var(--border-subtle);background:var(--bg-alt)}
@@ -190,6 +195,7 @@ tr:hover td{background:var(--bg-alt)}
 .modal-title{font-weight:700;font-size:14px}
 .modal-body{padding:18px}
 .modal-body p{margin:0 0 10px;color:var(--muted);font-size:13px}
+.modal-body .field-hint{margin:-6px 0 12px;font-size:11px}
 .modal-foot{display:flex;gap:9px;padding:0 18px 18px}
 .step{border:1px solid var(--border);border-radius:var(--radius);padding:14px;margin-bottom:14px;background:var(--bg-alt)}
 .step-title{display:flex;align-items:center;gap:8px;font-weight:700;font-size:13px;margin-bottom:8px}
@@ -282,6 +288,7 @@ tr:hover td{background:var(--bg-alt)}
   .connection-token{align-items:flex-start;flex-direction:column;gap:3px}
   .connection-token strong{text-align:left}
   .connection-actions{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .account-edit{flex-basis:44px;width:44px;height:44px}
   .policy-settings-grid{grid-template-columns:1fr}
   .policy-setting:last-child{grid-column:auto}
   .policy-form-footer{align-items:flex-start;flex-direction:column}

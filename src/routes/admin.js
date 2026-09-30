@@ -20,6 +20,7 @@ const ACTION_LABELS = {
   'account.reauthenticated': 'account re-authenticated',
   'account.enabled': 'account enabled',
   'account.disabled': 'account disabled',
+  'account.renamed': 'account renamed',
   'account.auto_enabled_quota': 'account auto-enabled after quota reset',
   'account.auto_disabled_quota': 'account auto-disabled by quota',
   'account.removed': 'account removed',
