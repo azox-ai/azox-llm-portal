@@ -9,6 +9,7 @@ import {
   ROUTERS, aggregateStatus, markPending, pullRouterState, reconcileAccount, removeAccount,
 } from '../services/sync.js';
 import { fetchQuota } from '../services/quota.js';
+import { getUserSessionQuotaSettings } from '../services/settings.js';
 
 const MAX_ACCOUNT_DISPLAY_NAME_LENGTH = 120;
 
@@ -101,7 +102,7 @@ export default async function accountRoutes(app, { db, config, adapters, oauthFe
     if (!request.user) return reply.code(401).send({ error: 'Not authenticated' });
     const ownerFilter = request.user.role === 'admin' ? '' : 'WHERE a.owner_id = ?';
     const query = db.prepare(`
-      SELECT a.id, a.provider, a.display_name, a.desired_enabled, a.credential_status,
+      SELECT a.id, a.owner_id, a.provider, a.display_name, a.desired_enabled, a.credential_status,
              a.access_expires_at, a.last_refresh_at, a.last_refresh_error,
              a.quota_auto_disabled, a.quota_session_reset_at,
              a.created_at, a.updated_at, u.username AS owner_username
@@ -114,7 +115,12 @@ export default async function accountRoutes(app, { db, config, adapters, oauthFe
       SELECT router, sync_status, last_error, last_synced_at
       FROM router_connections WHERE account_id = ?
     `);
+    const policies = new Map();
     return rows.map((row) => {
+      if (!policies.has(row.owner_id)) {
+        const { autoDisable, autoEnable, thresholdPercent } = getUserSessionQuotaSettings(db, row.owner_id);
+        policies.set(row.owner_id, { autoDisable, autoEnable, thresholdPercent });
+      }
       const states = Object.fromEntries(connections.all(row.id).map((c) => [c.router, {
         status: c.sync_status,
         error: c.last_error,
@@ -133,6 +139,7 @@ export default async function accountRoutes(app, { db, config, adapters, oauthFe
         lastRefreshError: row.last_refresh_error,
         quotaAutoDisabled: Boolean(row.quota_auto_disabled),
         quotaSessionResetAt: row.quota_session_reset_at,
+        quotaPolicy: policies.get(row.owner_id),
         status: aggregateStatus(statusMap),
         routers: states,
         createdAt: row.created_at,

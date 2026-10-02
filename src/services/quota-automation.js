@@ -9,15 +9,17 @@ function fetchForProvider(fetchByProvider, provider) {
   return fetchByProvider?.[provider] || fetch;
 }
 
-function quotaHasReset(account, window, now) {
+function quotaHasReset(account, windows, now) {
   const previousReset = Date.parse(account.quota_session_reset_at || '');
-  const currentReset = Date.parse(window.resetAt || '');
   if (Number.isFinite(previousReset)) {
-    return (Number.isFinite(currentReset) && currentReset > previousReset) || now >= previousReset;
+    if (now >= previousReset) return true;
+    // Only a single window is unambiguous when the provider rolls its reset
+    // forward. Another window advancing must not bypass the recorded pause.
+    return windows.length === 1 && Date.parse(windows[0].resetAt || '') > previousReset;
   }
   // Both supported providers normally return a reset timestamp. If one omits
   // it, only a fully replenished window is strong enough evidence to re-enable.
-  return Number(window.remaining) >= 99.9;
+  return windows.every((window) => window.remaining >= 99.9);
 }
 
 const QUOTA_WINDOW_PRIORITY = ['weekly', 'session'];
@@ -25,7 +27,7 @@ const QUOTA_WINDOW_PRIORITY = ['weekly', 'session'];
 function quotaWindowsByPriority(quota) {
   const priority = new Map(QUOTA_WINDOW_PRIORITY.map((name, index) => [name, index]));
   return Object.entries(quota.quotas || {})
-    .map(([name, window]) => ({ name, ...window, remaining: Number(window?.remaining) }))
+    .map(([name, window]) => ({ name, ...window, remaining: window?.remaining == null ? NaN : Number(window.remaining) }))
     .filter((window) => Number.isFinite(window.remaining))
     .sort((a, b) => (priority.get(a.name) ?? priority.size)
       - (priority.get(b.name) ?? priority.size));
@@ -136,7 +138,6 @@ export async function runQuotaAutomationTick(
             WHERE id = ? AND desired_enabled = 1 AND quota_auto_disabled = 1
           `).run(account.id);
         }
-        if (!settings.autoEnable && account.desired_enabled === 0) continue;
       }
       const tokenSet = decryptJson(account.credential_envelope, config.encryptionKey);
       const quota = await fetchQuota(
@@ -150,9 +151,25 @@ export async function runQuotaAutomationTick(
       // quota window remains above the configured threshold.
       const windows = quotaWindowsByPriority(quota);
       if (!windows.length) continue;
-      const blockedWindow = windows.find(
+      const hasUnknownWindow = Object.values(quota.quotas || {})
+        .some((window) => window?.remaining == null || !Number.isFinite(Number(window.remaining)));
+      const blockedWindows = windows.filter(
         (window) => window.remaining <= settings.thresholdPercent,
       );
+      const blockedWindow = blockedWindows.reduce((latest, window) => (
+        (Date.parse(window.resetAt || '') || 0) > (Date.parse(latest?.resetAt || '') || 0)
+          ? window : latest
+      ), blockedWindows[0]);
+
+      if (account.quota_auto_disabled === 1 && account.desired_enabled === 0 && blockedWindow) {
+        // Every exhausted window must recover; record the latest reset.
+        // Reset times can advance while an account remains disabled.
+        db.prepare(`
+          UPDATE provider_accounts SET quota_session_reset_at = ?, updated_at = CURRENT_TIMESTAMP
+          WHERE id = ? AND quota_auto_disabled = 1 AND desired_enabled = 0
+            AND quota_session_reset_at IS NOT ?
+        `).run(blockedWindow.resetAt || null, account.id, blockedWindow.resetAt || null);
+      }
 
       if (settings.autoDisable && account.desired_enabled === 1
         && blockedWindow) {
@@ -162,7 +179,7 @@ export async function runQuotaAutomationTick(
         continue;
       }
       if (settings.autoEnable && account.desired_enabled === 0 && account.quota_auto_disabled === 1
-        && !blockedWindow && quotaHasReset(account, windows[0], now)) {
+        && !blockedWindow && !hasUnknownWindow && quotaHasReset(account, windows, now)) {
         if (await setAutomatedState(
           db, adapters, config, account, true, windows[0], settings.thresholdPercent,
         )) result.enabled += 1;
