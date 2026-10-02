@@ -95,20 +95,13 @@ function formatAuditTime(value) {
     parts.hour + ':' + parts.minute + ':' + parts.second;
 }
 
-// Operational timestamps use dd/MM/yyyy, hh:mm:ss AM/PM. Build from parts
-// because the browser locale otherwise decides the field order.
-function formatDateTime(value, timeZone) {
-  const date = value instanceof Date ? value : new Date(value);
+function formatDateTime(value) {
+  // SQLite's timezone-less timestamps are UTC, just like upstream ISO values.
+  const normalized = typeof value === 'string' && /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(?:\.\d+)?$/.test(value)
+    ? value.replace(' ', 'T') + 'Z' : value;
+  const date = new Date(normalized);
   if (Number.isNaN(date.getTime())) return '—';
-  const parts = Object.fromEntries(new Intl.DateTimeFormat('en-US', {
-    ...(timeZone ? { timeZone } : {}),
-    year: 'numeric', month: '2-digit', day: '2-digit',
-    hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true,
-  }).formatToParts(date).filter((part) => part.type !== 'literal')
-    .map((part) => [part.type, part.value]));
-  return parts.day + '/' + parts.month + '/' + parts.year + ', ' +
-    parts.hour + ':' + parts.minute + ':' + parts.second + ' ' +
-    String(parts.dayPeriod || '').toUpperCase();
+  return formatAuditTime(date);
 }
 const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (char) =>
   ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
@@ -146,7 +139,7 @@ async function refresh() {
   if (state.tab === 'sponsors') await loadSponsors();
   render();
   // Quota is part of the Providers surface, so it loads with the page instead
-  // of waiting for a click. Failures stay silent per row.
+  // of waiting for a click. Each card reports its own quota error.
   if (state.tab === 'providers') loadQuotas();
 }
 
@@ -155,7 +148,7 @@ async function loadQuotas() {
     try {
       state.quotas[account.id] = await api('/api/accounts/' + account.id + '/quota');
     } catch {
-      state.quotas[account.id] = { plan: null, quotas: {} };
+      state.quotas[account.id] = { plan: null, quotas: {}, error: 'Quota unavailable. Retrying within 5 min.' };
     }
   }));
   // The background quota policy may have changed desired/router state while
@@ -178,7 +171,7 @@ function scheduleQuotaRefresh() {
   const resetTimes = Object.values(state.quotas)
     .flatMap((quota) => Object.values(quota?.quotas || {}))
     .map((quota) => Date.parse(quota?.resetAt || ''))
-    .filter(Number.isFinite);
+    .filter((resetAt) => Number.isFinite(resetAt) && resetAt > now);
   const nextReset = resetTimes.length ? Math.min(...resetTimes) : NaN;
   const delay = Number.isFinite(nextReset) && nextReset > now
     ? Math.min(QUOTA_REFRESH_INTERVAL_MS, Math.max(QUOTA_POST_RESET_DELAY_MS, nextReset - now + QUOTA_POST_RESET_DELAY_MS))
@@ -224,8 +217,8 @@ function passwordView() {
     '<button class="primary" id="btn-password">Update password</button></div></div></section>';
 }
 
-function statusBadge(value) {
-  return '<span class="badge ' + esc(value) + '"><i></i>' + esc(value) + '</span>';
+function statusBadge(value, label = value) {
+  return '<span class="badge ' + esc(value) + '"><i aria-hidden="true"></i>' + esc(label) + '</span>';
 }
 
 function providerIcon(provider) {
@@ -250,7 +243,7 @@ function providersView() {
     providerCard('codex', 'Codex', 'OpenAI ChatGPT OAuth account') + '</div></div>' +
     quotaPolicyPanel() +
     '<div class="panel connections-panel"><div class="panel-head"><div><h2>Connections</h2>' +
-    '<p>Provider health, router sync, quota and controls in one place.</p></div>' +
+    '<p>Availability, router sync and quota. All times in GMT+7.</p></div>' +
     '<div class="connection-toolbar"><div class="connection-filter-group" id="connection-provider-filter" role="group" aria-label="Filter connections by provider">' +
     '<button type="button" class="connection-filter-chip' + (filter === 'all' ? ' active' : '') + '" data-connection-filter="all" aria-pressed="' + (filter === 'all') + '">All</button>' +
     '<button type="button" class="connection-filter-chip' + (filter === 'claude' ? ' active' : '') + '" data-connection-filter="claude" aria-pressed="' + (filter === 'claude') + '">Claude Code</button>' +
@@ -297,7 +290,72 @@ function quotaPolicyPanel() {
     '</div></div></form></div>';
 }
 
+function quotaEntries(account) {
+  const priority = { session: 0, weekly: 1 };
+  return Object.entries(state.quotas[account.id]?.quotas || {})
+    .map(([name, window]) => [name, window && typeof window === 'object' ? window : {}])
+    .sort(([a], [b]) => (priority[a] ?? 2) - (priority[b] ?? 2));
+}
+
+function quotaRemaining(value) {
+  if (value === null || value === undefined || value === '') return NaN;
+  const remaining = Number(value);
+  return Number.isFinite(remaining) ? Math.max(0, Math.min(100, remaining)) : NaN;
+}
+
+function accountAvailability(account) {
+  const quota = state.quotas[account.id];
+  const entries = quotaEntries(account);
+  const threshold = account.quotaPolicy?.thresholdPercent ?? 0;
+  const blocked = entries.filter(([, window]) => quotaRemaining(window.remaining) <= threshold);
+  const exhausted = entries.find(([, window]) => quotaRemaining(window.remaining) === 0);
+  const stale = blocked.length > 0 && blocked.every(([, window]) => Date.parse(window.resetAt || '') <= Date.now());
+  if (account.credentialStatus && account.credentialStatus !== 'active') {
+    return { status: 'needs_reauth', label: 'Re-auth required', message: 'Reconnect this account to restore access.' };
+  }
+  if (!account.enabled) {
+    if (!account.quotaAutoDisabled) return { status: 'disabled', label: 'Disabled', message: '' };
+    let message = 'Auto-disabled by quota. ';
+    if (!quota) message += 'Loading current quota.';
+    else if (quota.error) message += quota.error;
+    else if (!entries.length) message += 'Upstream returned no quota window.';
+    else if (entries.some(([, window]) => !Number.isFinite(quotaRemaining(window.remaining)))) message += 'Quota remaining is unknown.';
+    else if (stale) message += 'Reset passed; awaiting fresh quota.';
+    else if (blocked.length) {
+      message += blocked.map(([name]) => quotaName(name, account.provider, quota.plan)).join(' + ') +
+        ' at or below ' + threshold + '% remaining.';
+      const resets = blocked.map(([, window]) => Date.parse(window.resetAt || '')).filter(Number.isFinite);
+      if (resets.length) message += ' Reset: ' + formatDateTime(Math.max(...resets)) + '.';
+    } else message += 'Quota recovered; awaiting policy check.';
+    if (account.quotaPolicy?.autoEnable === false) message += ' Auto-enable is off; enable manually when quota recovers.';
+    return { status: 'pending', label: 'Quota paused', message };
+  }
+  if (account.status !== 'active') {
+    if (account.status === 'needs_reauth') return { status: 'needs_reauth', label: 'Re-auth required', message: 'A router reports that credentials need renewal.' };
+    return { status: account.status || 'pending', label: account.status === 'failed' ? 'Sync failed' : 'Sync pending', message: '' };
+  }
+  if (Date.parse(account.accessExpiresAt || '') <= Date.now()) {
+    return { status: 'pending', label: 'Token expired', message: 'Access token expired; awaiting refresh.' };
+  }
+  if (!quota) return { status: 'pending', label: 'Checking quota', message: '' };
+  if (quota.error) return { status: 'pending', label: 'Quota unavailable', message: quota.error };
+  if (!entries.length || entries.some(([, window]) => !Number.isFinite(quotaRemaining(window.remaining)))) {
+    return { status: 'pending', label: 'Quota unknown', message: '' };
+  }
+  if (stale) return { status: 'pending', label: 'Checking reset', message: 'Reset passed; awaiting fresh quota.' };
+  if (exhausted) {
+    return { status: 'failed', label: 'Quota exhausted', message: quotaName(exhausted[0], account.provider, quota.plan) +
+      ' exhausted. Routing is enabled, but quota must recover before this account can serve requests.' };
+  }
+  if (account.quotaPolicy?.autoDisable && blocked.length) {
+    return { status: 'pending', label: 'Quota low', message: 'Quota reached the ' + threshold +
+      '% policy threshold; awaiting auto-disable.' };
+  }
+  return { status: 'active', label: 'Ready', message: '' };
+}
+
 function connectionCard(account) {
+  const availability = accountAvailability(account);
   const providerName = account.provider === 'claude' ? 'Claude Code' : 'Codex';
   const expiry = account.accessExpiresAt ? formatDateTime(account.accessExpiresAt) : 'Not reported';
   const editAction = account.provider === 'claude'
@@ -311,14 +369,13 @@ function connectionCard(account) {
     providerIcon(account.provider) + '<div><div class="account-title"><h3>' + esc(account.displayName) + '</h3>' + editAction +
     '</div><span class="provider-label">' + esc(providerName) + '</span>' +
     '<small>Sponsored by ' + esc(account.owner) + ' · Portal ID ' + account.id + '</small></div></div>' +
-    statusBadge(account.status) + '</header>' +
-    '<div class="connection-statuses"><div><span>Portal</span>' + statusBadge(account.status) + '</div>' +
-    '<div><span>9Router</span>' + statusBadge(account.routers.ninerouter?.status || 'pending') + '</div>' +
-    '<div><span>OmniRoute</span>' + statusBadge(account.routers.omniroute?.status || 'pending') + '</div></div>' +
-    '<div class="connection-token"><span>Access token expires</span><strong>' + esc(expiry) + '</strong></div>' +
-    (account.quotaAutoDisabled ? '<div class="quota-policy-warning">Auto-disabled by quota' +
-      (account.quotaSessionResetAt ? ' · reset ' + esc(formatDateTime(account.quotaSessionResetAt)) : '') + '</div>' : '') +
+    statusBadge(availability.status, availability.label) + '</header>' +
+    '<div class="connection-statuses"><div><span>Routing</span>' + statusBadge(account.enabled ? 'active' : 'disabled', account.enabled ? 'Enabled' : 'Disabled') + '</div>' +
+    '<div><span>9Router sync</span>' + statusBadge(account.routers.ninerouter?.status || 'pending') + '</div>' +
+    '<div><span>OmniRoute sync</span>' + statusBadge(account.routers.omniroute?.status || 'pending') + '</div></div>' +
+    (availability.message ? '<div class="quota-policy-warning ' + availability.status + '">' + esc(availability.message) + '</div>' : '') +
     quotaStrip(account) +
+    '<div class="connection-token"><span>Access token expires</span><strong>' + esc(expiry) + '</strong></div>' +
     '<footer class="connection-actions"><button data-toggle="' + account.id + '" data-enabled="' + (account.enabled ? '0' : '1') + '">' +
     (account.enabled ? 'Disable' : 'Enable') + '</button><button data-retry="' + account.id + '">Sync</button>' +
     '<button data-reauth="' + account.id + '" data-provider="' + esc(account.provider) + '">Re-auth</button>' +
@@ -328,18 +385,19 @@ function connectionCard(account) {
 function quotaStrip(account) {
   const quota = state.quotas[account.id];
   if (!quota) return '<div class="connection-quotas"><span class="quota-hint">Loading quota…</span></div>';
-  const entries = Object.entries(quota.quotas || {});
+  if (quota.error) return '<div class="connection-quotas"><span class="quota-hint">Quota check failed.</span></div>';
+  const entries = quotaEntries(account);
   if (!entries.length) return '<div class="connection-quotas"><span class="quota-hint">Upstream returned no quota window.</span></div>';
   return '<div class="connection-quotas"><div class="quota-section-title">' + entries.length +
     (entries.length === 1 ? ' quota window' : ' quota windows') + '</div>' +
     entries.map(([name, value]) => {
-      const remaining = Math.max(0, Math.min(100, Number(value.remaining) || 0));
-      const level = remaining <= 20 ? 'low' : remaining <= 50 ? 'medium' : 'healthy';
+      const remaining = quotaRemaining(value.remaining);
+      const level = !Number.isFinite(remaining) ? 'unknown' : remaining <= 20 ? 'low' : remaining <= 50 ? 'medium' : 'healthy';
       return '<div class="quota-meter ' + level + '"><div class="quota-meter-head"><span><i></i>' +
         esc(quotaName(name, account.provider, quota.plan)) + '</span><strong>' + quotaPercent(value.remaining) + ' remaining</strong></div>' +
         '<div class="progress" role="progressbar" aria-label="' + esc(quotaName(name, account.provider, quota.plan)) +
-        ' remaining" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + remaining + '">' +
-        '<span style="width:' + remaining + '%"></span></div><small>' + quotaResetLabel(value.resetAt) + '</small></div>';
+        ' remaining" aria-valuemin="0" aria-valuemax="100"' + (Number.isFinite(remaining) ? ' aria-valuenow="' + remaining + '"' : '') + '>' +
+        '<span style="width:' + (Number.isFinite(remaining) ? remaining : 0) + '%"></span></div><small>' + quotaResetLabel(value.resetAt) + '</small></div>';
     }).join('') +
     '</div>';
 }
@@ -352,7 +410,7 @@ function quotaName(name, provider, plan) {
 }
 
 function quotaPercent(value) {
-  const percent = Number(value);
+  const percent = quotaRemaining(value);
   if (!Number.isFinite(percent)) return '—';
   if (percent > 0 && percent < 1) return '<1%';
   return Math.round(Math.max(0, Math.min(100, percent))) + '%';
