@@ -19,24 +19,28 @@ function resetIso(value) {
 }
 
 function quotaWindow(window) {
-  if (!window || typeof window.utilization !== 'number') return null;
+  if (!window) return null;
+  const used = typeof window.utilization === 'number' && Number.isFinite(window.utilization)
+    ? window.utilization : null;
   return {
-    used: window.utilization,
-    remaining: Math.max(0, 100 - window.utilization),
+    used,
+    remaining: used === null ? null : Math.max(0, 100 - used),
     resetAt: resetIso(window.resets_at),
   };
 }
 
 function codexWindow(window) {
   if (!window) return null;
-  const used = Number(window.used_percent ?? window.percent_used ?? 0);
+  const rawUsed = window.used_percent ?? window.percent_used;
+  const parsedUsed = rawUsed === undefined || rawUsed === null || rawUsed === '' ? NaN : Number(rawUsed);
+  const used = Number.isFinite(parsedUsed) ? parsedUsed : null;
   const resetAt = resetIso(window.reset_at ?? window.resets_at)
     ?? (Number.isFinite(Number(window.reset_after_seconds))
       ? new Date(Date.now() + Number(window.reset_after_seconds) * 1000).toISOString()
       : null);
   return {
     used,
-    remaining: Math.max(0, 100 - used),
+    remaining: used === null ? null : Math.max(0, 100 - used),
     resetAt,
   };
 }

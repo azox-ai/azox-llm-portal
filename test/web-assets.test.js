@@ -21,7 +21,7 @@ function quotaClientHelpers(now) {
     setTimeout(_callback, delay) { scheduledDelay = delay; return 1; },
   });
   new vm.Script(appScript.slice(0, initStart) +
-    ';globalThis.quotaTest = { state, quotaName, quotaPercent, quotaResetLabel, formatDateTime, scheduleQuotaRefresh };')
+    ';globalThis.quotaTest = { state, quotaName, quotaPercent, quotaResetLabel, formatDateTime, scheduleQuotaRefresh, connectionCard, accountAvailability };')
     .runInContext(context);
   return {
     ...context.quotaTest,
@@ -155,7 +155,9 @@ test('quota UI refreshes after reset and labels stale snapshots', () => {
   assert.equal(quota.quotaName('session', 'codex', 'pro'), 'Weekly (7d)');
   assert.equal(quota.quotaName('weekly', 'codex', 'pro'), 'Weekly (7d)');
   assert.equal(quota.quotaPercent(0.4), '<1%');
-  assert.equal(quota.formatDateTime('2026-09-22T03:30:53'), '22/09/2026, 03:30:53 AM');
+  assert.equal(quota.formatDateTime('2026-09-22T03:30:53'), '22/09/2026 10:30:53');
+  assert.equal(quota.formatDateTime('2026-09-22 03:30:53'), '22/09/2026 10:30:53');
+  assert.equal(quota.formatDateTime('2026-09-22T03:30:53Z'), '22/09/2026 10:30:53');
   assert.match(quota.quotaResetLabel('2026-09-15T06:00:00.000Z'), /Reset passed/);
 
   quota.state.me = { csrfToken: 'test' };
@@ -165,6 +167,66 @@ test('quota UI refreshes after reset and labels stale snapshots', () => {
   };
   quota.scheduleQuotaRefresh();
   assert.equal(quota.scheduledDelay(), 25_000);
+  quota.state.quotas.staleAccount = { quotas: { session: { resetAt: '2026-09-15T06:00:00.000Z' } } };
+  quota.scheduleQuotaRefresh();
+  assert.equal(quota.scheduledDelay(), 25_000, 'past resets must not hide another account\'s upcoming reset');
+});
+
+test('connection cards distinguish routing from exhausted quota and keep session quota first', () => {
+  const quota = quotaClientHelpers(Date.parse('2026-10-02T06:00:00Z'));
+  const account = { id: 1, provider: 'codex', displayName: 'Test Codex', owner: 'test',
+    enabled: true, status: 'active', routers: { ninerouter: { status: 'active' }, omniroute: { status: 'active' } },
+    quotaPolicy: { autoDisable: true, thresholdPercent: 30, autoEnable: true } };
+  quota.state.quotas[1] = { plan: 'plus', quotas: {
+    session: { remaining: 100, resetAt: '2026-10-02T01:00:00Z' },
+    weekly: { remaining: 0, resetAt: '2026-10-04T00:00:00Z' },
+  } };
+  const card = quota.connectionCard(account);
+  assert.match(card.slice(0, card.indexOf('</header>')), /Quota exhausted/);
+  assert.match(card, />Routing<.*>Enabled</);
+  assert.match(card, />9Router sync<.*>active</);
+  assert.ok(card.indexOf('quota-meter healthy') < card.indexOf('quota-meter low'));
+  assert.doesNotMatch(card.slice(0, card.indexOf('</header>')), />Ready</);
+});
+
+test('auto-disabled cards use live blocking reset instead of an old saved reset', () => {
+  const quota = quotaClientHelpers(Date.parse('2026-10-02T06:00:00Z'));
+  const account = { id: 1, provider: 'codex', displayName: 'Test', owner: 'test', enabled: false,
+    status: 'disabled', routers: {}, quotaAutoDisabled: true, quotaSessionResetAt: '2026-09-23T12:00:00Z',
+    quotaPolicy: { thresholdPercent: 30, autoEnable: false } };
+  quota.state.quotas[1] = { plan: 'plus', quotas: {
+    session: { remaining: 100, resetAt: '2026-10-02T09:00:00Z' },
+    weekly: { remaining: 0, resetAt: '2026-10-04T00:00:00Z' },
+  } };
+  const card = quota.connectionCard(account);
+  assert.match(card, /Quota paused/);
+  assert.match(card, /Weekly \(7d\) at or below 30%/);
+  assert.match(card, /Reset: 04\/10\/2026/);
+  assert.match(card, /Auto-enable is off/);
+  assert.doesNotMatch(card, /23\/09\/2026/);
+});
+
+test('missing or failed quota is never reported as ready or fully recovered', () => {
+  const quota = quotaClientHelpers(Date.parse('2026-10-02T06:00:00Z'));
+  const account = { id: 1, provider: 'codex', displayName: 'Test', owner: 'test', enabled: true,
+    status: 'active', routers: {}, quotaPolicy: { thresholdPercent: 30, autoDisable: true } };
+  assert.equal(quota.accountAvailability(account).label, 'Checking quota');
+  quota.state.quotas[1] = { error: 'Quota unavailable. Retrying within 5 min.', quotas: {} };
+  assert.equal(quota.accountAvailability(account).label, 'Quota unavailable');
+  assert.doesNotMatch(quota.connectionCard(account), /Upstream returned no quota window/);
+  quota.state.quotas[1] = { quotas: { weekly: { remaining: null } } };
+  assert.equal(quota.accountAvailability(account).label, 'Quota unknown');
+  assert.equal(quota.quotaPercent(null), '\u2014');
+  assert.doesNotMatch(quota.connectionCard(account), /aria-valuenow="0"/);
+  assert.match(quota.accountAvailability({ ...account, enabled: false, quotaAutoDisabled: true }).message, /unknown/);
+  quota.state.quotas[1] = { quotas: { weekly: { remaining: 0, resetAt: '2026-10-01T00:00:00Z' } } };
+  assert.equal(quota.accountAvailability(account).label, 'Checking reset');
+  quota.state.quotas[1] = { quotas: { weekly: { remaining: 40 } } };
+  assert.equal(quota.accountAvailability(account).label, 'Ready');
+  quota.state.quotas[1].quotas.weekly.remaining = 20;
+  assert.equal(quota.accountAvailability(account).label, 'Quota low');
+  assert.equal(quota.accountAvailability({ ...account, enabled: false }).label, 'Disabled');
+  assert.equal(quota.accountAvailability({ ...account, credentialStatus: 'needs_reauth' }).label, 'Re-auth required');
 });
 
 test('the portal ships English copy only and a persisted theme toggle', () => {
@@ -219,6 +281,7 @@ test('served assets contain the 9Router-inspired portal shell', () => {
   assert.match(styles, /\.modal-overlay/);
   // Connections reflow from a two-column dashboard grid to one column.
   assert.match(styles, /\.connections-grid\{display:grid;grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
+  assert.match(styles, /\.connections-grid\{[^}]*align-items:start/);
   assert.match(styles, /\.connection-toolbar\{display:flex;align-items:center;gap:10px;flex-wrap:wrap\}/);
   assert.match(styles, /\.connection-filter-chip/);
   assert.match(styles, /@media\(max-width:1120px\)\{\s*\.connections-grid\{grid-template-columns:1fr\}/);

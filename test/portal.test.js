@@ -491,6 +491,14 @@ test('Codex quota converts epoch-second reset_at instead of rendering 1970', asy
   assert.match(quota.quotas.session.resetAt, /^2026-/);
 });
 
+test('Codex quota preserves unknown usage instead of reporting 100% remaining', async () => {
+  const quota = await fetchQuota('codex', { accessToken: 'token' }, async () => new Response(JSON.stringify({
+    rate_limit: { primary_window: { reset_at: 1789064300 }, secondary_window: { used_percent: 'not a number' } },
+  }), { status: 200 }));
+  assert.equal(quota.quotas.session.remaining, null);
+  assert.equal(quota.quotas.weekly.remaining, null);
+});
+
 test('Claude quota treats utilization as percent used and returns remaining percent', async () => {
   const quota = await fetchQuota('claude', { accessToken: 'token' }, async () => new Response(JSON.stringify({
     plan_type: 'max',
@@ -628,6 +636,7 @@ test('quota automation disables an account when its weekly window is depleted', 
     sessionStillDepleted,
     { checked: 1, disabled: 0, enabled: 0, failed: 0 },
   );
+  assert.equal(db.prepare('SELECT quota_session_reset_at FROM provider_accounts WHERE id = ?').get(accountId).quota_session_reset_at, sessionReset);
 
   sessionUtilization = 0;
   const enabled = await runQuotaAutomationTick(
@@ -672,6 +681,83 @@ test('session quota automation never enables a manually disabled account', async
     { ...db.prepare('SELECT desired_enabled, quota_auto_disabled FROM provider_accounts WHERE id = ?').get(accountId) },
     { desired_enabled: 0, quota_auto_disabled: 0 },
   );
+});
+
+test('quota automation advances an old pause reset even when automatic resume is off', async (t) => {
+  const { app, db, config, adapters } = await testApp();
+  t.after(() => { app.close(); db.close(); });
+  const ownerId = await seedUser(db, 'stale-reset-owner');
+  db.prepare('INSERT INTO user_quota_settings (user_id, auto_disable, threshold_percent, auto_enable) VALUES (?, 1, 30, 0)').run(ownerId);
+  const accountId = Number(db.prepare(`
+    INSERT INTO provider_accounts
+      (owner_id, provider, upstream_subject, display_name, credential_envelope,
+       desired_enabled, quota_auto_disabled, quota_session_reset_at)
+    VALUES (?, 'claude', 'stale-reset', 'Stale reset', ?, 0, 1, '2026-09-23T12:00:00Z')
+  `).run(ownerId, encryptJson({ accessToken: 'test-access' }, config.encryptionKey)).lastInsertRowid);
+  let used = 100;
+  let reset = '2026-10-04T00:00:00.000Z';
+  const fetchImpl = { claude: async () => new Response(JSON.stringify({
+    five_hour: { utilization: 0, resets_at: '2026-10-02T15:00:00Z' },
+    seven_day: { utilization: used, resets_at: reset },
+  }), { status: 200 }) };
+  const now = Date.parse('2026-10-02T06:00:00Z');
+  assert.deepEqual(await runQuotaAutomationTick(db, adapters, config, fetchImpl, now),
+    { checked: 1, disabled: 0, enabled: 0, failed: 0 });
+  let stored = db.prepare('SELECT quota_session_reset_at, token_version FROM provider_accounts WHERE id = ?').get(accountId);
+  assert.equal(stored.quota_session_reset_at, reset);
+  assert.equal(stored.token_version, 1, 'reset metadata changes must not rotate credentials or toggle routers');
+  reset = '2026-10-11T00:00:00.000Z';
+  await runQuotaAutomationTick(db, adapters, config, fetchImpl, now + 7 * 86400000);
+  stored = db.prepare('SELECT quota_session_reset_at FROM provider_accounts WHERE id = ?').get(accountId);
+  assert.equal(stored.quota_session_reset_at, reset);
+  used = 0;
+  await runQuotaAutomationTick(db, adapters, config, fetchImpl, now + 14 * 86400000);
+  assert.equal(db.prepare('SELECT desired_enabled FROM provider_accounts WHERE id = ?').get(accountId).desired_enabled, 0);
+});
+
+test('another quota window advancing cannot resume a paused account before its recorded reset', async (t) => {
+  const { app, db, config, adapters } = await testApp();
+  t.after(() => { app.close(); db.close(); });
+  const ownerId = await seedUser(db, 'unrelated-reset-owner');
+  const accountId = Number(db.prepare(`
+    INSERT INTO provider_accounts
+      (owner_id, provider, upstream_subject, display_name, credential_envelope,
+       desired_enabled, quota_auto_disabled, quota_session_reset_at)
+    VALUES (?, 'claude', 'unrelated-reset', 'Unrelated reset', ?, 0, 1, '2030-01-01T05:00:00Z')
+  `).run(ownerId, encryptJson({ accessToken: 'test-access' }, config.encryptionKey)).lastInsertRowid);
+  const fetchImpl = { claude: async () => new Response(JSON.stringify({
+    five_hour: { utilization: 0, resets_at: '2030-01-01T05:00:00Z' },
+    seven_day: { utilization: 0, resets_at: '2030-01-08T00:00:00Z' },
+  }), { status: 200 }) };
+  const result = await runQuotaAutomationTick(db, adapters, config, fetchImpl, Date.parse('2030-01-01T01:00:00Z'));
+  assert.equal(result.enabled, 0);
+  assert.equal(db.prepare('SELECT desired_enabled FROM provider_accounts WHERE id = ?').get(accountId).desired_enabled, 0);
+  const unknownQuota = { claude: async () => new Response(JSON.stringify({
+    five_hour: { utilization: 0, resets_at: '2030-01-01T10:00:00Z' },
+    seven_day: { resets_at: '2030-01-08T00:00:00Z' },
+  }), { status: 200 }) };
+  const unknownResult = await runQuotaAutomationTick(db, adapters, config, unknownQuota, Date.parse('2030-01-01T06:00:00Z'));
+  assert.equal(unknownResult.enabled, 0, 'unknown weekly quota must not be treated as recovered');
+});
+
+test('account list exposes each owners effective quota policy to an admin', async (t) => {
+  const { app, db, config } = await testApp();
+  t.after(() => { app.close(); db.close(); });
+  const ownerId = await seedUser(db, 'custom-policy-list-owner');
+  const defaultId = await seedUser(db, 'default-policy-list-owner');
+  const admin = await session(app, db, 'policy-list-admin', 'admin');
+  db.prepare('INSERT INTO user_quota_settings (user_id, auto_disable, threshold_percent, auto_enable) VALUES (?, 0, 10, 0)').run(ownerId);
+  const insert = db.prepare(`INSERT INTO provider_accounts
+    (owner_id, provider, upstream_subject, display_name, credential_envelope)
+    VALUES (?, 'codex', ?, 'Test', ?)`);
+  const customAccount = Number(insert.run(ownerId, 'custom-policy-list', encryptJson({ accessToken: 'test' }, config.encryptionKey)).lastInsertRowid);
+  const defaultAccount = Number(insert.run(defaultId, 'default-policy-list', encryptJson({ accessToken: 'test' }, config.encryptionKey)).lastInsertRowid);
+  const response = await app.inject({ method: 'GET', url: '/api/accounts', headers: { cookie: admin.cookie } });
+  assert.equal(response.statusCode, 200);
+  assert.deepEqual(response.json().find((a) => a.id === customAccount).quotaPolicy,
+    { autoDisable: false, autoEnable: false, thresholdPercent: 10 });
+  assert.deepEqual(response.json().find((a) => a.id === defaultAccount).quotaPolicy,
+    { autoDisable: true, autoEnable: true, thresholdPercent: 30 });
 });
 
 test('manual OAuth accepts Claude code#state and a Codex callback URL', () => {
