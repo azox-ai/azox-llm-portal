@@ -412,21 +412,40 @@ test('Model tab shows four tier checkboxes and admin-only editing controls', () 
     .runInContext(context);
   const { state, modelView, editModelModal, formatPrice, modelMoveFocusTarget, tabFromPath, pathForTab } = context.modelsTest;
   state.me = { role: 'user' };
-  state.models = [{ id: 1, model: '<bad>', tiers: ['Max', 'High'], inputPrice: 2, outputPrice: 10, position: 1 }];
+  state.models = [{ id: 1, model: '<bad>', tiers: ['Max', 'High'], inputPrice: 2, outputPrice: 10, position: 1, status: 'inactive', families: [{ id: 2, title: 'code' }] }];
+  state.modelFamilies = [{ id: 2, title: 'code', modelCount: 1 }, { id: 3, title: 'agent', modelCount: 0 }];
   const userView = modelView();
   assert.match(userView, /&lt;bad&gt;/);
-  assert.doesNotMatch(userView, /data-edit-model|id="add-model"|data-move-model/);
+  assert.ok(userView.indexOf('Model family') < userView.indexOf('Model catalog'));
+  assert.match(userView, /class="family-tag"[^>]*>#2 code<\/span>/);
+  assert.match(userView, /<th>Family<\/th>/);
+  assert.match(userView, /inactive/);
+  assert.doesNotMatch(userView, /data-edit-model|id="add-model"|data-move-model|data-delete-model|data-delete-family|data-status-model|id="add-family"/);
   for (const tier of ['Ultra', 'Max', 'High', 'Medium']) assert.match(userView, new RegExp('type="checkbox"[^>]*aria-label="' + tier + '[^"]*"'));
   state.me = { role: 'admin' };
   const adminView = modelView();
   assert.match(adminView, /data-edit-model="1"/);
   assert.match(adminView, /data-move-model="1"/);
   assert.match(adminView, /id="add-model"/);
+  assert.match(adminView, /id="add-family"/);
+  assert.match(adminView, /data-edit-family="2"/);
+  assert.match(adminView, /data-delete-family="2"/);
+  assert.match(adminView, /data-delete-model="1"/);
+  assert.match(adminView, /data-status-model="1"[^>]*role="switch"/);
+  assert.match(adminView, /inactive/);
+  assert.ok(adminView.indexOf('data-edit-model="1"') < adminView.indexOf('data-delete-model="1"'));
   assert.equal(tabFromPath('/models'), 'models');
   assert.equal(pathForTab('models'), '/models');
   const modal = editModelModal({ id: 1, model: '<script>', tiers: ['High'], inputPrice: 2, outputPrice: 10 });
   assert.match(modal, /value="&lt;script&gt;"/);
   assert.match(modal, /name="tier" value="High" checked/);
+  const addModal = editModelModal({ id: null, model: '', tiers: [], familyIds: [], status: 'inactive', inputPrice: '', outputPrice: '' });
+  assert.match(addModal, /name="model-family" value="2"/);
+  assert.match(addModal, /id="model-status"[^>]*role="switch"/);
+  assert.doesNotMatch(addModal, /id="model-status"[^>]*checked/);
+  const editModal = editModelModal({ id: 1, model: 'custom/edit', tiers: ['High'], familyIds: [2], status: 'active', inputPrice: 2, outputPrice: 10 });
+  assert.match(editModal, /name="model-family" value="2" checked/);
+  assert.match(editModal, /id="model-status"[^>]*checked/);
   // Small per-million prices must not be rounded into a different value.
   assert.equal(formatPrice(0.00005), '$0.00005');
   assert.equal(formatPrice(0.2219), '$0.2219');
@@ -439,4 +458,49 @@ test('Model tab shows four tier checkboxes and admin-only editing controls', () 
   // The hidden Actions header is absolutely positioned; without a positioned
   // scroller it escapes the table and widens the whole page on mobile.
   assert.match(styles, /\.table-wrap\{position:relative;overflow-x:auto\}/);
+});
+
+test('light theme draws white tier and family checkboxes while dark theme keeps native ones', () => {
+  // Light: the explicit choice and the OS default when no dark choice is made.
+  const light = styles.match(/:root:not\(\[data-theme="dark"\]\) \.tier-check input[^{]*\{([^}]*)\}/);
+  assert.ok(light, 'light-only checkbox rule must exist');
+  assert.match(light[1], /appearance:none/);
+  assert.match(light[1], /background(-color)?:#fff/);
+  assert.match(light[1], /border:[^;]*var\(--border-strong\)/);
+  assert.match(styles, /:root:not\(\[data-theme="dark"\]\) [^{]*input:checked::after\{[^}]*border[^}]*var\(--brand\)/);
+  // The dark OS preference must override the light rule when no explicit light choice was made.
+  assert.match(styles, /@media \(prefers-color-scheme:dark\)\{[^@]*:root:not\(\[data-theme="light"\]\) \.tier-check input[^{]*\{[^}]*appearance:auto/);
+});
+
+test('saving a model sends selected families and on/off status', async () => {
+  const initStart = appScript.indexOf('(async function init()');
+  const fields = {
+    'model-id': { value: 'custom/new' },
+    'model-input-price': { value: '1' },
+    'model-output-price': { value: '2' },
+    'model-status': { checked: true },
+    'save-model': { disabled: false, textContent: 'Save' },
+  };
+  const bodies = [];
+  const context = vm.createContext({
+    document: {
+      getElementById: (id) => fields[id] || null,
+      querySelectorAll: (selector) => selector.includes('model-family') ? [{ value: '3' }, { value: '5' }] : [{ value: 'High' }],
+    },
+    setTimeout() {},
+  });
+  new vm.Script(appScript.slice(0, initStart) +
+    ';globalThis.saveTest = { state, saveModel, setApi(fn) { api = fn; }, setRender(fn) { render = fn; } };')
+    .runInContext(context);
+  const { state, saveModel, setApi, setRender } = context.saveTest;
+  setRender(() => {});
+  setApi(async (path, options = {}) => {
+    if (options.body) bodies.push(JSON.parse(options.body));
+    return [];
+  });
+  state.modal = { type: 'model', id: null, model: '', tiers: [], familyIds: [], status: 'inactive', inputPrice: '', outputPrice: '', error: null };
+  await saveModel();
+  assert.equal(bodies.length, 1);
+  assert.deepEqual(bodies[0].familyIds, [3, 5]);
+  assert.equal(bodies[0].status, 'active');
 });

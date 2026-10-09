@@ -46,6 +46,10 @@ export function migrate(db) {
     addColumn(db, 'router_connections', 'synced_token_version', 'INTEGER NOT NULL DEFAULT 0');
   }
 
+  if (tableExists(db, 'model_catalog')) {
+    addColumn(db, 'model_catalog', 'status', "TEXT NOT NULL DEFAULT 'inactive' CHECK (status IN ('active', 'inactive'))");
+  }
+
   // Dropping the column also drops the old CHECK constraint that referenced it.
   if (tableExists(db, 'users') && columnNames(db, 'users').includes('must_change_password')) {
     db.exec('ALTER TABLE users DROP COLUMN must_change_password');

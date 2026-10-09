@@ -109,7 +109,22 @@ CREATE TABLE IF NOT EXISTS model_catalog (
   input_price REAL NOT NULL CHECK (input_price >= 0),
   output_price REAL NOT NULL CHECK (output_price >= 0),
   position INTEGER NOT NULL,
+  status TEXT NOT NULL DEFAULT 'inactive' CHECK (status IN ('active', 'inactive')),
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) STRICT;
+
+CREATE TABLE IF NOT EXISTS model_families (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  title TEXT NOT NULL UNIQUE CHECK (length(title) BETWEEN 1 AND 64 AND title NOT GLOB '*[^a-z0-9_-]*'),
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS model_family_links (
+  model_id INTEGER NOT NULL REFERENCES model_catalog(id) ON DELETE CASCADE,
+  family_id INTEGER NOT NULL REFERENCES model_families(id) ON DELETE CASCADE,
+  PRIMARY KEY (model_id, family_id)
+) STRICT;
+CREATE INDEX IF NOT EXISTS model_family_links_family ON model_family_links(family_id);
 `;

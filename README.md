@@ -7,12 +7,16 @@ Internal account portal for the `llm-gateway` Docker stack.
 - Providers: Claude and Codex OAuth only.
 - Model catalog: a reference-only table seeded once from the 2026-10-01
   `azox-llm-gateway` README snapshot (20 models). Any signed-in user can view
-  the four tier checkboxes and input/output USD prices per million tokens;
-  admins can add, edit, or reorder models. Each model can belong to multiple
-  tiers. Changes are local to Portal and never change routing, LiteLLM prices,
-  billing, or gateway availability. The seed includes models that were listed
-  as Testing or Deprecated; it does not track those lifecycle labels or sync
-  future README changes automatically.
+  tier, family, status (`active`/`inactive`), and input/output USD prices per
+  million tokens. All seeded and existing models default to `inactive` after
+  migration. Admins can add, edit, reorder, delete, or toggle a model; new
+  models default to inactive. Each model can belong to multiple tiers and
+  multiple families. Admins can add, rename, or delete a family; deleting one
+  unlinks it from every model. Family IDs increase and are not reused. Families
+  start empty (no preset names). Changes are local to Portal and never change
+  routing, LiteLLM prices, billing, or gateway availability. The seed includes
+  models listed as Testing or Deprecated; it does not track those lifecycle
+  labels or sync future README changes automatically.
 - Admin-created username/password users; users may change password at any time.
 - Admin surface mirrors the 9Router dashboard: create user, reset a chosen
   password, disable/enable, and remove a user with its router connections.
