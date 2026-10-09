@@ -30,6 +30,9 @@ const ACTION_LABELS = {
   'admin.remove_user': 'user removed',
   'admin.remove_user_failed': 'user removal failed',
   'admin.update_user': 'user updated',
+  'admin.create_model': 'model added',
+  'admin.update_model': 'model updated',
+  'admin.move_model': 'model moved',
   'user.login': 'user login',
   'user.login_failed': 'user login failed',
   'admin.login': 'admin login',
@@ -259,6 +262,7 @@ export default async function adminRoutes(app, { db, adapters, config }) {
         CASE
           WHEN l.target_type = 'user' THEN target_user.username
           WHEN l.target_type = 'account' THEN target_account.display_name
+          WHEN l.target_type = 'model' THEN target_model.model
           ELSE NULL
         END AS resolved_target
       FROM audit_log l
@@ -267,6 +271,8 @@ export default async function adminRoutes(app, { db, adapters, config }) {
         ON l.target_type = 'user' AND target_user.id = CAST(l.target_id AS INTEGER)
       LEFT JOIN provider_accounts target_account
         ON l.target_type = 'account' AND target_account.id = CAST(l.target_id AS INTEGER)
+      LEFT JOIN model_catalog target_model
+        ON l.target_type = 'model' AND target_model.id = CAST(l.target_id AS INTEGER)
       ORDER BY l.id DESC LIMIT ? OFFSET ?
     `).all(pageSize, (page - 1) * pageSize).map((entry) => ({
       id: entry.id,
