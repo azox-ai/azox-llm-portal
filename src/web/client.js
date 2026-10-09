@@ -7,6 +7,7 @@ const state = {
   message: null,
   quotas: {},
   sponsors: [],
+  models: [],
   users: [],
   audit: { items: [], page: 1, pageSize: 20, total: 0, totalPages: 1 },
   settings: null,
@@ -28,12 +29,14 @@ const QUOTA_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
 const QUOTA_POST_RESET_DELAY_MS = 5 * 1000;
 const TAB_PATHS = {
   providers: '/providers',
+  models: '/models',
   sponsors: '/sponsors',
   admin: '/admin',
   audit: '/audit',
 };
 const PATH_TABS = {
   '/providers': 'providers',
+  '/models': 'models',
   '/sponsors': 'sponsors',
   '/admin': 'admin',
   '/audit': 'audit',
@@ -137,6 +140,7 @@ async function refresh() {
   if (state.me?.role === 'admin' && state.tab === 'admin') await loadAdmin();
   if (state.me?.role === 'admin' && state.tab === 'audit') await loadAudit();
   if (state.tab === 'sponsors') await loadSponsors();
+  if (state.tab === 'models') await loadModels();
   render();
   // Quota is part of the Providers surface, so it loads with the page instead
   // of waiting for a click. Each card reports its own quota error.
@@ -182,6 +186,10 @@ function scheduleQuotaRefresh() {
 
 async function loadSponsors() {
   state.sponsors = await api('/api/sponsors');
+}
+
+async function loadModels() {
+  state.models = await api('/api/models');
 }
 
 async function loadAdmin() {
@@ -441,6 +449,44 @@ function sponsorsView() {
   return groups || '<div class="panel empty">No sponsors available.</div>';
 }
 
+const MODEL_TIERS = ['Ultra', 'Max', 'High', 'Medium'];
+
+function formatPrice(value) {
+  return '$' + Number(value).toLocaleString('en-US', { maximumFractionDigits: 8 });
+}
+
+function modelView() {
+  const admin = state.me?.role === 'admin';
+  const rows = state.models.map((item, index) => {
+    const tiers = MODEL_TIERS.map((tier) => '<label class="tier-check"><input type="checkbox" disabled' +
+      (item.tiers.includes(tier) ? ' checked' : '') + ' aria-label="' + tier + ' tier for ' + esc(item.model) + '"><span>' + tier + '</span></label>').join('');
+    const actions = admin ? '<td class="actions model-actions">' +
+      '<button data-move-model="' + item.id + '" data-direction="up" aria-label="Move ' + esc(item.model) + ' up"' + (index === 0 ? ' disabled' : '') + '>↑</button>' +
+      '<button data-move-model="' + item.id + '" data-direction="down" aria-label="Move ' + esc(item.model) + ' down"' + (index === state.models.length - 1 ? ' disabled' : '') + '>↓</button>' +
+      '<button data-edit-model="' + item.id + '">Edit</button></td>' : '';
+    return '<tr><td class="model-index">' + (index + 1) + '</td><td><code class="model-id">' + esc(item.model) + '</code></td>' +
+      '<td><div class="tier-group">' + tiers + '</div></td><td class="model-price">' + formatPrice(item.inputPrice) + ' / ' + formatPrice(item.outputPrice) + '</td>' + actions + '</tr>';
+  }).join('');
+  return '<div class="panel"><div class="panel-head"><div><h2>Model catalog</h2>' +
+    '<p>Price per 1M input/output tokens. Reference only; this does not change gateway routing or billing.</p></div>' +
+    (admin ? '<button class="primary" id="add-model">Add model</button>' : '') + '</div>' +
+    '<div class="table-wrap"><table class="model-table"><thead><tr><th>#</th><th>Model</th><th>Tier</th><th>Price input/output</th>' +
+    (admin ? '<th><span class="sr-only">Actions</span></th>' : '') + '</tr></thead><tbody>' +
+    (rows || '<tr><td colspan="' + (admin ? 5 : 4) + '" class="empty">No models in catalog.</td></tr>') + '</tbody></table></div></div>';
+}
+
+function editModelModal(modal) {
+  const tiers = MODEL_TIERS.map((tier) => '<label class="tier-option"><input type="checkbox" name="tier" value="' + tier + '"' +
+    (modal.tiers.includes(tier) ? ' checked' : '') + '>' + tier + '</label>').join('');
+  return modalFrame(modal.id ? 'Edit model' : 'Add model',
+    '<form id="model-form"><label for="model-id">Model<input id="model-id" maxlength="160" required autocomplete="off" spellcheck="false" placeholder="provider/model" value="' + esc(modal.model) + '"></label>' +
+    '<fieldset class="tier-fieldset"><legend>Tier</legend><div class="tier-options">' + tiers + '</div><p class="field-hint">Select one or more tiers.</p></fieldset>' +
+    '<div class="price-fields"><label for="model-input-price">Input price ($/1M)<input id="model-input-price" type="number" min="0" step="any" inputmode="decimal" required value="' + esc(modal.inputPrice) + '"></label>' +
+    '<label for="model-output-price">Output price ($/1M)<input id="model-output-price" type="number" min="0" step="any" inputmode="decimal" required value="' + esc(modal.outputPrice) + '"></label></div>' +
+    (modal.error ? '<div class="notice error" role="alert">' + esc(modal.error) + '</div>' : '') + '</form>',
+  '<button id="close-modal" type="button">Cancel</button><button class="primary" id="save-model" type="submit" form="model-form">Save</button>');
+}
+
 function adminView() {
   const userRows = state.users.map((user) => '<tr><td><div><strong>' + esc(user.username) + '</strong><small class="row-sub">' +
     esc(formatDateTime(user.createdAt)) + '</small></div></td><td><select class="role-select" data-role-user="' + user.id +
@@ -553,6 +599,7 @@ function modalView() {
   if (state.modal.type === 'reset-password') return resetPasswordModal(state.modal);
   if (state.modal.type === 'remove-user') return removeUserModal(state.modal);
   if (state.modal.type === 'edit-account') return editAccountModal(state.modal);
+  if (state.modal.type === 'model') return editModelModal(state.modal);
   return '';
 }
 
@@ -586,11 +633,12 @@ function render(extra) {
   }
   $('page-title').textContent = state.view === 'password'
     ? 'Change password'
-    : ({ providers: 'Providers', sponsors: 'Sponsors', admin: 'Admin', audit: 'Audit log' }[state.tab] || 'Portal');
+    : ({ providers: 'Providers', models: 'Model', sponsors: 'Sponsors', admin: 'Admin', audit: 'Audit log' }[state.tab] || 'Portal');
   $('session').innerHTML = '<div class="who"><strong>' + esc(state.me.username) + '</strong><span>' + esc(state.me.role) + '</span></div>' +
     '<button id="btn-password-view">Change password</button><button class="ghost" id="btn-logout">Logout</button>';
   const navItems = [
     ['providers', '◈', 'Providers'],
+    ['models', '▦', 'Model'],
     ['sponsors', '♧', 'Sponsors'],
     ...(state.me.role === 'admin' ? [['admin', '♙', 'Admin'], ['audit', '≣', 'Audit log']] : []),
   ];
@@ -605,6 +653,8 @@ function render(extra) {
         ? auditView()
       : state.tab === 'admin'
         ? adminView()
+        : state.tab === 'models'
+          ? modelView()
         : state.tab === 'sponsors'
           ? sponsorsView()
           : providersView();
@@ -694,6 +744,17 @@ function bind() {
       render();
     };
   });
+  if ($('add-model')) $('add-model').onclick = () => openModelModal();
+  document.querySelectorAll('[data-edit-model]').forEach((element) => {
+    element.onclick = () => openModelModal(state.models.find((item) => String(item.id) === element.dataset.editModel));
+  });
+  document.querySelectorAll('[data-move-model]').forEach((element) => { element.onclick = () => act(element, async () => {
+    state.models = await api('/api/models/' + element.dataset.moveModel + '/move', { method: 'POST', body: JSON.stringify({ direction: element.dataset.direction }) });
+    render();
+    const moved = document.querySelector(modelMoveFocusTarget({ id: element.dataset.moveModel, direction: element.dataset.direction }, state.models));
+    if (moved && !moved.disabled) moved.focus();
+  }); });
+  if ($('model-form')) $('model-form').onsubmit = (event) => { event.preventDefault(); saveModel(); };
   if ($('audit-prev')) $('audit-prev').onclick = async () => { await loadAudit(state.audit.page - 1); render(); };
   if ($('audit-next')) $('audit-next').onclick = async () => { await loadAudit(state.audit.page + 1); render(); };
   if ($('create-user-form')) $('create-user-form').onsubmit = (event) => { event.preventDefault(); createUser(); };
@@ -709,6 +770,61 @@ function bind() {
   if ($('edit-account-form')) $('edit-account-form').onsubmit = (event) => { event.preventDefault(); updateAccountName(); };
   if ($('confirm-reset')) $('confirm-reset').onclick = resetUserPassword;
   if ($('confirm-remove-user')) $('confirm-remove-user').onclick = removeUser;
+}
+
+function openModelModal(item = null) {
+  state.modal = item
+    ? { type: 'model', id: item.id, model: item.model, tiers: [...item.tiers], inputPrice: item.inputPrice, outputPrice: item.outputPrice, error: null }
+    : { type: 'model', id: null, model: '', tiers: [], inputPrice: '', outputPrice: '', error: null };
+  render();
+  if ($('model-id')) $('model-id').focus();
+}
+
+async function saveModel() {
+  const tiers = [...document.querySelectorAll('input[name="tier"]:checked')].map((input) => input.value);
+  const payload = {
+    model: $('model-id').value.trim(),
+    tiers,
+    inputPrice: Number($('model-input-price').value),
+    outputPrice: Number($('model-output-price').value),
+  };
+  Object.assign(state.modal, { model: $('model-id').value, tiers, inputPrice: $('model-input-price').value, outputPrice: $('model-output-price').value });
+  const invalid = !payload.model ? 'Model is required.'
+    : !tiers.length ? 'Select at least one tier.'
+      : $('model-input-price').value === '' || $('model-output-price').value === '' || payload.inputPrice < 0 || payload.outputPrice < 0 ? 'Enter non-negative input and output prices.' : null;
+  if (invalid) {
+    state.modal.error = invalid;
+    render();
+    return;
+  }
+  const button = $('save-model');
+  button.disabled = true;
+  button.textContent = 'Saving…';
+  const editing = state.modal.id;
+  try {
+    await api(editing ? '/api/models/' + editing : '/api/models', { method: editing ? 'PATCH' : 'POST', body: JSON.stringify(payload) });
+  } catch (error) {
+    state.modal.error = error.message;
+    render();
+    return;
+  }
+  // The write already succeeded; a failed reload must not reopen the form.
+  state.modal = null;
+  try {
+    await loadModels();
+    notify(editing ? 'Model updated.' : 'Model added.', 'ok');
+  } catch (error) {
+    notify('Model saved, but the catalog could not reload: ' + error.message);
+  }
+}
+
+// After a move the clicked arrow may become disabled at the list edge; keep
+// keyboard focus on the same row by switching to the opposite arrow.
+function modelMoveFocusTarget(moved, models) {
+  const index = models.findIndex((item) => String(item.id) === moved.id);
+  const atEdge = moved.direction === 'up' ? index === 0 : index === models.length - 1;
+  const direction = atEdge ? (moved.direction === 'up' ? 'down' : 'up') : moved.direction;
+  return '[data-move-model="' + moved.id + '"][data-direction="' + direction + '"]';
 }
 
 async function act(element, action) {

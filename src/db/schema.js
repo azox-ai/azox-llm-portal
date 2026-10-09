@@ -99,4 +99,17 @@ CREATE TABLE IF NOT EXISTS app_settings (
   value TEXT NOT NULL,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) STRICT;
+
+-- Model catalog shown to Portal users. It is reference data only: it never
+-- changes LiteLLM routing or pricing.
+CREATE TABLE IF NOT EXISTS model_catalog (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  model TEXT NOT NULL COLLATE NOCASE UNIQUE,
+  tiers TEXT NOT NULL,
+  input_price REAL NOT NULL CHECK (input_price >= 0),
+  output_price REAL NOT NULL CHECK (output_price >= 0),
+  position INTEGER NOT NULL,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+) STRICT;
 `;

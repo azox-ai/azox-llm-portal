@@ -105,7 +105,7 @@ textarea{min-height:74px;resize:vertical}
 .field-row input{margin-top:0}
 
 /* ---------------------------------------------------------------- table */
-.table-wrap{overflow-x:auto}
+.table-wrap{position:relative;overflow-x:auto}
 table{width:100%;border-collapse:collapse}
 th{text-align:left;padding:10px 16px;color:var(--subtle);font-size:10px;letter-spacing:.7px;text-transform:uppercase;background:var(--bg-alt);font-weight:700}
 td{padding:13px 16px;border-top:1px solid var(--border-subtle);vertical-align:middle}
@@ -124,6 +124,25 @@ tr:hover td{background:var(--bg-alt)}
 .badge.pending,.badge.partially_synced{background:rgba(245,158,11,.14);color:var(--warning-text)}
 .badge.failed,.badge.needs_reauth,.badge.disabled,.badge.revoked{background:rgba(207,34,46,.12);color:var(--danger-text)}
 .empty,.quota-placeholder{padding:42px;text-align:center;color:var(--muted)}
+
+.model-table{min-width:760px}
+.model-index{width:48px;color:var(--muted);font-variant-numeric:tabular-nums}
+.model-id{font-size:12px;overflow-wrap:anywhere}
+.tier-group{display:flex;gap:6px;flex-wrap:wrap}
+.tier-check,.tier-option{display:inline-flex;align-items:center;gap:6px;margin:0;color:var(--text);font-size:12px;font-weight:600}
+.tier-check{min-height:28px;padding:3px 9px;border:1px solid var(--border);border-radius:999px;background:var(--surface)}
+.tier-check input,.tier-option input{width:16px;height:16px;margin:0;accent-color:var(--brand)}
+.tier-check input:checked+span{color:var(--brand)}
+.model-price{white-space:nowrap;font-variant-numeric:tabular-nums}
+.model-actions{justify-content:flex-end;flex-wrap:nowrap}
+.model-actions button{min-width:44px;min-height:44px}
+.tier-fieldset{border:0;padding:0;margin:0 0 13px}
+.tier-fieldset legend{color:var(--muted);font-size:12px;font-weight:600;margin-bottom:8px}
+.tier-options{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+.tier-option{min-height:44px;padding:8px;border:1px solid var(--border);border-radius:var(--radius)}
+.price-fields{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+@media (max-width:640px){.tier-options,.price-fields{grid-template-columns:1fr 1fr}}
 
 /* ---------------------------------------------------------------- notices */
 .notice,.readonly{padding:11px 14px;margin-bottom:16px;border-radius:var(--radius);background:var(--brand-soft);color:var(--brand);font-size:13px;font-weight:600}

@@ -369,3 +369,74 @@ test('content security policy permits the exact theme bootstrap and Cloudflare I
   assert.match(csp, /connect-src [^;]*https:\/\/cloudflareinsights\.com/);
   assert.doesNotMatch(csp, /script-src [^;]*'unsafe-inline'/);
 });
+
+test('saved model stays saved when the catalog reload fails', async () => {
+  const initStart = appScript.indexOf('(async function init()');
+  const fields = {
+    'model-id': { value: 'custom/new' },
+    'model-input-price': { value: '1' },
+    'model-output-price': { value: '2' },
+    'save-model': { disabled: false, textContent: 'Save' },
+  };
+  const requests = [];
+  const context = vm.createContext({
+    document: {
+      getElementById: (id) => fields[id] || null,
+      querySelectorAll: () => [{ value: 'High' }],
+    },
+    setTimeout() {},
+  });
+  new vm.Script(appScript.slice(0, initStart) +
+    ';globalThis.saveTest = { state, saveModel, setApi(fn) { api = fn; }, setRender(fn) { render = fn; } };')
+    .runInContext(context);
+  const { state, saveModel, setApi, setRender } = context.saveTest;
+  setRender(() => {});
+  setApi(async (path, options = {}) => {
+    requests.push([options.method || 'GET', path]);
+    if (path === '/api/models' && !options.method) throw new Error('catalog unavailable');
+    return { id: 1 };
+  });
+  state.modal = { type: 'model', id: null, model: '', tiers: [], inputPrice: '', outputPrice: '', error: null };
+  await saveModel();
+  assert.deepEqual(requests, [['POST', '/api/models'], ['GET', '/api/models']]);
+  assert.equal(state.modal, null);
+  assert.equal(state.message.kind, 'error');
+  assert.match(state.message.text, /saved.*catalog unavailable/i);
+});
+
+test('Model tab shows four tier checkboxes and admin-only editing controls', () => {
+  const initStart = appScript.indexOf('(async function init()');
+  const context = vm.createContext({});
+  new vm.Script(appScript.slice(0, initStart) +
+    ';globalThis.modelsTest = { state, modelView, editModelModal, formatPrice, modelMoveFocusTarget, tabFromPath, pathForTab };')
+    .runInContext(context);
+  const { state, modelView, editModelModal, formatPrice, modelMoveFocusTarget, tabFromPath, pathForTab } = context.modelsTest;
+  state.me = { role: 'user' };
+  state.models = [{ id: 1, model: '<bad>', tiers: ['Max', 'High'], inputPrice: 2, outputPrice: 10, position: 1 }];
+  const userView = modelView();
+  assert.match(userView, /&lt;bad&gt;/);
+  assert.doesNotMatch(userView, /data-edit-model|id="add-model"|data-move-model/);
+  for (const tier of ['Ultra', 'Max', 'High', 'Medium']) assert.match(userView, new RegExp('type="checkbox"[^>]*aria-label="' + tier + '[^"]*"'));
+  state.me = { role: 'admin' };
+  const adminView = modelView();
+  assert.match(adminView, /data-edit-model="1"/);
+  assert.match(adminView, /data-move-model="1"/);
+  assert.match(adminView, /id="add-model"/);
+  assert.equal(tabFromPath('/models'), 'models');
+  assert.equal(pathForTab('models'), '/models');
+  const modal = editModelModal({ id: 1, model: '<script>', tiers: ['High'], inputPrice: 2, outputPrice: 10 });
+  assert.match(modal, /value="&lt;script&gt;"/);
+  assert.match(modal, /name="tier" value="High" checked/);
+  // Small per-million prices must not be rounded into a different value.
+  assert.equal(formatPrice(0.00005), '$0.00005');
+  assert.equal(formatPrice(0.2219), '$0.2219');
+  assert.equal(modelMoveFocusTarget({ id: '7', direction: 'up' }, [{ id: 7 }, { id: 8 }]),
+    '[data-move-model="7"][data-direction="down"]');
+  assert.equal(modelMoveFocusTarget({ id: '7', direction: 'down' }, [{ id: 8 }, { id: 7 }]),
+    '[data-move-model="7"][data-direction="up"]');
+  assert.equal(modelMoveFocusTarget({ id: '7', direction: 'up' }, [{ id: 8 }, { id: 7 }, { id: 9 }]),
+    '[data-move-model="7"][data-direction="up"]');
+  // The hidden Actions header is absolutely positioned; without a positioned
+  // scroller it escapes the table and widens the whole page on mobile.
+  assert.match(styles, /\.table-wrap\{position:relative;overflow-x:auto\}/);
+});

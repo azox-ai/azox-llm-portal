@@ -11,6 +11,7 @@ import authRoutes from './routes/auth.js';
 import accountRoutes from './routes/accounts.js';
 import adminRoutes from './routes/admin.js';
 import preferenceRoutes from './routes/preferences.js';
+import modelRoutes from './routes/models.js';
 import { renderApp } from './web/page.js';
 import {
   assets, IMMUTABLE_CACHE_CONTROL, NO_STORE_CACHE_CONTROL,
@@ -94,6 +95,7 @@ export async function buildApp(options = {}) {
   await app.register(accountRoutes, { db, config, adapters, oauthFetch: options.oauthFetch });
   await app.register(adminRoutes, { db, adapters, config });
   await app.register(preferenceRoutes, { db });
+  await app.register(modelRoutes, { db });
 
   await restoreFullAccountLabels(db, adapters, config);
 
@@ -114,7 +116,7 @@ export async function buildApp(options = {}) {
     .header('cache-control', NO_STORE_CACHE_CONTROL)
     .type('text/html')
     .send(renderApp());
-  for (const path of ['/', '/providers', '/sponsors', '/admin', '/audit']) app.get(path, appShell);
+  for (const path of ['/', '/providers', '/models', '/sponsors', '/admin', '/audit']) app.get(path, appShell);
 
   for (const asset of Object.values(assets)) {
     app.get(asset.path, async (_request, reply) => reply
