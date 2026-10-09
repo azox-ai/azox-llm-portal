@@ -396,15 +396,15 @@ test('saved model stays saved when the catalog reload fails', async () => {
     if (path === '/api/models' && !options.method) throw new Error('catalog unavailable');
     return { id: 1 };
   });
-  state.modal = { type: 'model', id: null, model: '', tiers: [], inputPrice: '', outputPrice: '', error: null };
+  state.modal = { type: 'model', id: null, model: '', tierIds: [], inputPrice: '', outputPrice: '', error: null };
   await saveModel();
   assert.deepEqual(requests, [['POST', '/api/models'], ['GET', '/api/models']]);
   assert.equal(state.modal, null);
-  assert.equal(state.message.kind, 'error');
-  assert.match(state.message.text, /saved.*catalog unavailable/i);
+  assert.equal(state.toast.kind, 'error');
+  assert.match(state.toast.text, /saved.*catalog unavailable/i);
 });
 
-test('Model tab shows four tier checkboxes and admin-only editing controls', () => {
+test('Model tab shows tier and family tags with admin-only editing controls', () => {
   const initStart = appScript.indexOf('(async function init()');
   const context = vm.createContext({});
   new vm.Script(appScript.slice(0, initStart) +
@@ -412,8 +412,9 @@ test('Model tab shows four tier checkboxes and admin-only editing controls', () 
     .runInContext(context);
   const { state, modelView, editModelModal, formatPrice, modelMoveFocusTarget, tabFromPath, pathForTab } = context.modelsTest;
   state.me = { role: 'user' };
-  state.models = [{ id: 1, model: '<bad>', tiers: ['Max', 'High'], inputPrice: 2, outputPrice: 10, position: 1, status: 'inactive', families: [{ id: 2, title: 'code' }] }];
+  state.models = [{ id: 1, model: '<bad>', tiers: [{ id: 2, title: 'model-max' }, { id: 3, title: 'model-high' }], inputPrice: 2, outputPrice: 10, position: 1, status: 'inactive', families: [{ id: 2, title: 'code' }] }];
   state.modelFamilies = [{ id: 2, title: 'code', modelCount: 1 }, { id: 3, title: 'agent', modelCount: 0 }];
+  state.modelTiers = [{ id: 1, title: 'model-ultra', modelCount: 0 }, { id: 2, title: 'model-max', modelCount: 1 }, { id: 3, title: 'model-high', modelCount: 1 }];
   const userView = modelView();
   assert.match(userView, /&lt;bad&gt;/);
   assert.ok(userView.indexOf('Model family') < userView.indexOf('Model catalog'));
@@ -421,7 +422,14 @@ test('Model tab shows four tier checkboxes and admin-only editing controls', () 
   assert.match(userView, /<th>Family<\/th>/);
   assert.match(userView, /inactive/);
   assert.doesNotMatch(userView, /data-edit-model|id="add-model"|data-move-model|data-delete-model|data-delete-family|data-status-model|id="add-family"/);
-  for (const tier of ['Ultra', 'Max', 'High', 'Medium']) assert.match(userView, new RegExp('type="checkbox"[^>]*aria-label="' + tier + '[^"]*"'));
+  // Tiers are an admin-managed catalog shown exactly like families.
+  assert.ok(userView.indexOf('Model tier') < userView.indexOf('Model catalog'));
+  assert.match(userView, /class="family-tag"[^>]*>#1 model-ultra<\/span>/);
+  assert.match(userView, /<td class="family-cell"><span class="family-tag">#2 model-max<\/span><span class="family-tag">#3 model-high<\/span><\/td>/);
+  assert.doesNotMatch(userView, /type="checkbox"[^>]*disabled|data-edit-tier|data-delete-tier|id="add-tier"/);
+  state.models = [{ ...state.models[0], tiers: [] }];
+  assert.match(modelView(), /<td class="family-cell">—<\/td><td class="family-cell">#2|<td class="family-cell">—<\/td>/);
+  state.models = [{ id: 1, model: '<bad>', tiers: [{ id: 2, title: 'model-max' }], inputPrice: 2, outputPrice: 10, position: 1, status: 'inactive', families: [{ id: 2, title: 'code' }] }];
   state.me = { role: 'admin' };
   const adminView = modelView();
   assert.match(adminView, /data-edit-model="1"/);
@@ -430,20 +438,25 @@ test('Model tab shows four tier checkboxes and admin-only editing controls', () 
   assert.match(adminView, /id="add-family"/);
   assert.match(adminView, /data-edit-family="2"/);
   assert.match(adminView, /data-delete-family="2"/);
+  assert.match(adminView, /id="add-tier"/);
+  assert.match(adminView, /data-edit-tier="1"[^>]*aria-label="Rename tier model-ultra"/);
+  assert.match(adminView, /data-delete-tier="1"[^>]*aria-label="Delete tier model-ultra"/);
   assert.match(adminView, /data-delete-model="1"/);
   assert.match(adminView, /data-status-model="1"[^>]*role="switch"/);
   assert.match(adminView, /inactive/);
   assert.ok(adminView.indexOf('data-edit-model="1"') < adminView.indexOf('data-delete-model="1"'));
   assert.equal(tabFromPath('/models'), 'models');
   assert.equal(pathForTab('models'), '/models');
-  const modal = editModelModal({ id: 1, model: '<script>', tiers: ['High'], inputPrice: 2, outputPrice: 10 });
+  const modal = editModelModal({ id: 1, model: '<script>', tierIds: [3], inputPrice: 2, outputPrice: 10 });
   assert.match(modal, /value="&lt;script&gt;"/);
-  assert.match(modal, /name="tier" value="High" checked/);
-  const addModal = editModelModal({ id: null, model: '', tiers: [], familyIds: [], status: 'inactive', inputPrice: '', outputPrice: '' });
+  assert.match(modal, /name="model-tier" value="3" checked>model-high/);
+  assert.match(modal, /name="model-tier" value="1">model-ultra/);
+  assert.doesNotMatch(modal, /Select one or more tiers/);
+  const addModal = editModelModal({ id: null, model: '', tierIds: [], familyIds: [], status: 'inactive', inputPrice: '', outputPrice: '' });
   assert.match(addModal, /name="model-family" value="2"/);
   assert.match(addModal, /id="model-status"[^>]*role="switch"/);
   assert.doesNotMatch(addModal, /id="model-status"[^>]*checked/);
-  const editModal = editModelModal({ id: 1, model: 'custom/edit', tiers: ['High'], familyIds: [2], status: 'active', inputPrice: 2, outputPrice: 10 });
+  const editModal = editModelModal({ id: 1, model: 'custom/edit', tierIds: [3], familyIds: [2], status: 'active', inputPrice: 2, outputPrice: 10 });
   assert.match(editModal, /name="model-family" value="2" checked/);
   assert.match(editModal, /id="model-status"[^>]*checked/);
   // Small per-million prices must not be rounded into a different value.
@@ -462,17 +475,20 @@ test('Model tab shows four tier checkboxes and admin-only editing controls', () 
 
 test('light theme draws white tier and family checkboxes while dark theme keeps native ones', () => {
   // Light: the explicit choice and the OS default when no dark choice is made.
-  const light = styles.match(/:root:not\(\[data-theme="dark"\]\) \.tier-check input[^{]*\{([^}]*)\}/);
+  // The catalog table shows tier tags, so only the edit-form checkboxes remain.
+  assert.doesNotMatch(styles, /\.tier-check|\.tier-group/);
+  assert.doesNotMatch(styles, /:root:not\([^)]*\) :root/);
+  const light = styles.match(/:root:not\(\[data-theme="dark"\]\) \.tier-option input[^{]*\{([^}]*)\}/);
   assert.ok(light, 'light-only checkbox rule must exist');
   assert.match(light[1], /appearance:none/);
   assert.match(light[1], /background(-color)?:#fff/);
   assert.match(light[1], /border:[^;]*var\(--border-strong\)/);
   assert.match(styles, /:root:not\(\[data-theme="dark"\]\) [^{]*input:checked::after\{[^}]*border[^}]*var\(--brand\)/);
   // The dark OS preference must override the light rule when no explicit light choice was made.
-  assert.match(styles, /@media \(prefers-color-scheme:dark\)\{[^@]*:root:not\(\[data-theme="light"\]\) \.tier-check input[^{]*\{[^}]*appearance:auto/);
+  assert.match(styles, /@media \(prefers-color-scheme:dark\)\{[^@]*:root:not\(\[data-theme="light"\]\) \.tier-option input[^{]*\{[^}]*appearance:auto/);
 });
 
-test('saving a model sends selected families and on/off status', async () => {
+test('saving a model sends selected tier and family IDs and on/off status', async () => {
   const initStart = appScript.indexOf('(async function init()');
   const fields = {
     'model-id': { value: 'custom/new' },
@@ -485,7 +501,7 @@ test('saving a model sends selected families and on/off status', async () => {
   const context = vm.createContext({
     document: {
       getElementById: (id) => fields[id] || null,
-      querySelectorAll: (selector) => selector.includes('model-family') ? [{ value: '3' }, { value: '5' }] : [{ value: 'High' }],
+      querySelectorAll: (selector) => selector.includes('model-family') ? [{ value: '3' }, { value: '5' }] : [{ value: '4' }, { value: '1' }],
     },
     setTimeout() {},
   });
@@ -498,9 +514,143 @@ test('saving a model sends selected families and on/off status', async () => {
     if (options.body) bodies.push(JSON.parse(options.body));
     return [];
   });
-  state.modal = { type: 'model', id: null, model: '', tiers: [], familyIds: [], status: 'inactive', inputPrice: '', outputPrice: '', error: null };
+  state.modal = { type: 'model', id: null, model: '', tierIds: [], familyIds: [], status: 'inactive', inputPrice: '', outputPrice: '', error: null };
   await saveModel();
   assert.equal(bodies.length, 1);
+  assert.deepEqual(bodies[0].tierIds, [4, 1]);
+  assert.equal(bodies[0].tiers, undefined);
   assert.deepEqual(bodies[0].familyIds, [3, 5]);
   assert.equal(bodies[0].status, 'active');
+});
+
+test('a model without any tier can be saved', async () => {
+  const initStart = appScript.indexOf('(async function init()');
+  const fields = {
+    'model-id': { value: 'custom/untiered' },
+    'model-input-price': { value: '0' },
+    'model-output-price': { value: '0' },
+    'model-status': { checked: false },
+    'save-model': { disabled: false, textContent: 'Save' },
+  };
+  const bodies = [];
+  const context = vm.createContext({
+    document: { getElementById: (id) => fields[id] || null, querySelectorAll: () => [] },
+    setTimeout() {},
+    clearTimeout() {},
+  });
+  new vm.Script(appScript.slice(0, initStart) +
+    ';globalThis.saveTest = { state, saveModel, setApi(fn) { api = fn; }, setRender(fn) { render = fn; } };')
+    .runInContext(context);
+  const { state, saveModel, setApi, setRender } = context.saveTest;
+  setRender(() => {});
+  setApi(async (_path, options = {}) => { if (options.body) bodies.push(JSON.parse(options.body)); return []; });
+  state.modal = { type: 'model', id: null, model: '', tierIds: [], familyIds: [], status: 'inactive', inputPrice: '', outputPrice: '', error: null };
+  await saveModel();
+  assert.equal(bodies.length, 1);
+  assert.deepEqual(bodies[0].tierIds, []);
+  assert.equal(state.modal, null);
+});
+
+test('tier catalog loads with the models and is managed like families', async () => {
+  const initStart = appScript.indexOf('(async function init()');
+  const fields = { 'tag-title': { value: 'model-mini' }, 'save-tag': { disabled: false } };
+  const requests = [];
+  const context = vm.createContext({
+    document: { getElementById: (id) => fields[id] || null, querySelectorAll: () => [] },
+    setTimeout() {},
+    clearTimeout() {},
+  });
+  new vm.Script(appScript.slice(0, initStart) +
+    ';globalThis.tagTest = { state, loadModels, saveTag, deleteTag, tagModal, deleteTagModal, setApi(fn) { api = fn; }, setRender(fn) { render = fn; } };')
+    .runInContext(context);
+  const { state, loadModels, saveTag, deleteTag, tagModal, deleteTagModal, setApi, setRender } = context.tagTest;
+  setRender(() => {});
+  setApi(async (path, options = {}) => {
+    requests.push([options.method || 'GET', path, options.body && JSON.parse(options.body)]);
+    if (path === '/api/model-tiers' && !options.method) return [{ id: 5, title: 'model-mini', modelCount: 0 }];
+    if (options.method === 'DELETE') return { unlinkedModels: 2 };
+    return [];
+  });
+  await loadModels();
+  assert.deepEqual(requests.map((r) => r[1]), ['/api/models', '/api/model-families', '/api/model-tiers']);
+  assert.equal(state.modelTiers[0].title, 'model-mini');
+
+  assert.match(tagModal({ kind: 'tier', id: null, title: '' }), /Add model tier/);
+  assert.match(tagModal({ kind: 'tier', id: 5, title: 'model-mini' }), /Rename model tier/);
+  assert.match(tagModal({ kind: 'family', id: null, title: '' }), /Add model family/);
+  assert.match(deleteTagModal({ kind: 'tier', id: 5, title: 'model-mini', modelCount: 2 }), /Delete model tier[\s\S]*removed from 2 models/);
+
+  requests.length = 0;
+  state.modal = { type: 'tag', kind: 'tier', id: null, title: '', error: null };
+  await saveTag();
+  assert.deepEqual(requests[0], ['POST', '/api/model-tiers', { title: 'model-mini' }]);
+  assert.equal(state.modal, null);
+  assert.deepEqual({ ...state.toast, id: undefined }, { text: 'Tier added.', kind: 'ok', id: undefined });
+
+  requests.length = 0;
+  fields['save-tag'] = { disabled: false };
+  state.modal = { type: 'tag', kind: 'tier', id: 5, title: 'model-mini', error: null };
+  await saveTag();
+  assert.deepEqual(requests[0], ['PATCH', '/api/model-tiers/5', { title: 'model-mini' }]);
+  assert.equal(state.toast.text, 'Tier renamed.');
+
+  requests.length = 0;
+  fields['confirm-delete-tag'] = { disabled: false };
+  state.modal = { type: 'delete-tag', kind: 'tier', id: 5, title: 'model-mini', modelCount: 2, error: null };
+  await deleteTag();
+  assert.deepEqual(requests[0], ['DELETE', '/api/model-tiers/5', undefined]);
+  assert.equal(state.toast.text, 'Tier deleted; unlinked from 2 models.');
+
+  fields['tag-title'] = { value: 'Bad Title' };
+  state.modal = { type: 'tag', kind: 'tier', id: null, title: '', error: null };
+  await saveTag();
+  assert.match(state.modal.error, /lowercase/);
+});
+
+function toastClientHelpers() {
+  const initStart = appScript.indexOf('(async function init()');
+  const roots = { 'toast-root': { innerHTML: '', dataset: {} } };
+  const timers = [];
+  const cleared = [];
+  const context = vm.createContext({
+    document: { getElementById: (id) => roots[id] || null },
+    setTimeout(callback, delay) { timers.push({ callback, delay }); return timers.length; },
+    clearTimeout(id) { cleared.push(id); },
+  });
+  new vm.Script(appScript.slice(0, initStart) +
+    ';globalThis.toastTest = { state, notify, showToast, setRender(fn) { render = fn; } };')
+    .runInContext(context);
+  return { ...context.toastTest, root: roots['toast-root'], timers, cleared };
+}
+
+test('every operation result is a top-center toast that hides after 3 seconds', () => {
+  const { state, notify, showToast, setRender, root, timers, cleared } = toastClientHelpers();
+  let renders = 0;
+  setRender(() => { renders += 1; });
+  notify('Model updated.', 'ok');
+  assert.equal(renders, 1);
+  assert.match(root.innerHTML, /<div class="toast ok" role="status">Model updated\.<\/div>/);
+  assert.equal(timers.at(-1).delay, 3000);
+  // Errors are toasts too, announced assertively and escaped.
+  showToast('<b>nope</b>');
+  assert.match(root.innerHTML, /<div class="toast error" role="alert">&lt;b&gt;nope&lt;\/b&gt;<\/div>/);
+  assert.equal(cleared.length, 1, 'a newer toast restarts the 3s timer');
+  // The stale timer of the first toast must not hide the newer one.
+  timers[0].callback();
+  assert.match(root.innerHTML, /nope/);
+  timers.at(-1).callback();
+  assert.equal(root.innerHTML, '');
+  assert.equal(state.toast, null);
+  // No page banner remains for operation results.
+  assert.doesNotMatch(appScript, /state\.message|const banner/);
+  assert.match(renderApp(), /<div id="toast-root" class="toast-root" aria-live="polite" aria-atomic="true"><\/div>/);
+  const rootRule = styles.match(/\.toast-root\{([^}]*)\}/);
+  assert.ok(rootRule, 'toast root rule must exist');
+  assert.match(rootRule[1], /position:fixed/);
+  assert.match(rootRule[1], /top:/);
+  assert.match(rootRule[1], /left:50%/);
+  assert.match(rootRule[1], /transform:translateX\(-50%\)/);
+  assert.match(rootRule[1], /z-index:(\d+)/);
+  assert.ok(Number(rootRule[1].match(/z-index:(\d+)/)[1]) > 50, 'toast must sit above modals');
+  assert.match(styles, /prefers-reduced-motion:reduce\)\{[^}]*\.toast\{animation:none\}/);
 });

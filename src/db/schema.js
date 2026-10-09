@@ -127,4 +127,18 @@ CREATE TABLE IF NOT EXISTS model_family_links (
   PRIMARY KEY (model_id, family_id)
 ) STRICT;
 CREATE INDEX IF NOT EXISTS model_family_links_family ON model_family_links(family_id);
+
+CREATE TABLE IF NOT EXISTS model_tiers (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  title TEXT NOT NULL UNIQUE CHECK (length(title) BETWEEN 1 AND 64 AND title NOT GLOB '*[^a-z0-9_-]*'),
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS model_tier_links (
+  model_id INTEGER NOT NULL REFERENCES model_catalog(id) ON DELETE CASCADE,
+  tier_id INTEGER NOT NULL REFERENCES model_tiers(id) ON DELETE CASCADE,
+  PRIMARY KEY (model_id, tier_id)
+) STRICT;
+CREATE INDEX IF NOT EXISTS model_tier_links_tier ON model_tier_links(tier_id);
 `;

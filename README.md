@@ -10,13 +10,19 @@ Internal account portal for the `llm-gateway` Docker stack.
   tier, family, status (`active`/`inactive`), and input/output USD prices per
   million tokens. All seeded and existing models default to `inactive` after
   migration. Admins can add, edit, reorder, delete, or toggle a model; new
-  models default to inactive. Each model can belong to multiple tiers and
-  multiple families. Admins can add, rename, or delete a family; deleting one
-  unlinks it from every model. Family IDs increase and are not reused. Families
-  start empty (no preset names). Changes are local to Portal and never change
+  models default to inactive. Each model can belong to zero or more tiers and
+  zero or more families. Tiers and families are admin-managed catalogs: admins
+  can add, rename, or delete either; deleting one unlinks it from every model.
+  IDs increase and are not reused. Migration creates the tiers `model-ultra`,
+  `model-max`, `model-high`, `model-medium` (IDs 1–4) once and keeps every
+  existing model's tier links; the legacy `model_catalog.tiers` JSON column is
+  kept in sync so an older image can still be rolled back to. Families start
+  empty (no preset names). Changes are local to Portal and never change
   routing, LiteLLM prices, billing, or gateway availability. The seed includes
   models listed as Testing or Deprecated; it does not track those lifecycle
   labels or sync future README changes automatically.
+- Operation results (success and failure) appear as a top-center toast that
+  hides after 3 seconds. Input validation errors stay next to their form.
 - Admin-created username/password users; users may change password at any time.
 - Admin surface mirrors the 9Router dashboard: create user, reset a chosen
   password, disable/enable, and remove a user with its router connections.

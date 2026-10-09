@@ -128,21 +128,18 @@ tr:hover td{background:var(--bg-alt)}
 .model-table{min-width:1040px}
 .model-index{width:48px;color:var(--muted);font-variant-numeric:tabular-nums}
 .model-id{font-size:12px;overflow-wrap:anywhere}
-.tier-group{display:flex;gap:6px;flex-wrap:wrap}
-.tier-check,.tier-option{display:inline-flex;align-items:center;gap:6px;margin:0;color:var(--text);font-size:12px;font-weight:600}
-.tier-check{min-height:28px;padding:3px 9px;border:1px solid var(--border);border-radius:999px;background:var(--surface)}
-.tier-check input,.tier-option input{width:16px;height:16px;margin:0;padding:0;accent-color:var(--brand)}
-.tier-check input:checked+span{color:var(--brand)}
+.tier-option{display:inline-flex;align-items:center;gap:6px;margin:0;color:var(--text);font-size:12px;font-weight:600}
+.tier-option input{width:16px;height:16px;margin:0;padding:0;accent-color:var(--brand)}
 /* Light theme: white checkboxes with a brand tick instead of the filled native
    control. The dark theme keeps the native accent-colour checkbox. */
-:root:not([data-theme="dark"]) .tier-check input,:root:not([data-theme="dark"]) .tier-option input{appearance:none;position:relative;flex:0 0 16px;background:#fff;border:1.5px solid var(--border-strong);border-radius:4px;cursor:pointer}
-:root:not([data-theme="dark"]) .tier-check input:disabled,:root:not([data-theme="dark"]) .tier-option input:disabled{cursor:default;opacity:1}
-:root:not([data-theme="dark"]) .tier-check input:checked,:root:not([data-theme="dark"]) .tier-option input:checked{border-color:var(--brand)}
-:root:not([data-theme="dark"]) .tier-check input:checked::after,:root:not([data-theme="dark"]) .tier-option input:checked::after{content:"";position:absolute;left:4px;top:1px;width:4px;height:8px;border:solid var(--brand);border-width:0 2px 2px 0;transform:rotate(45deg)}
-:root:not([data-theme="dark"]) .tier-check input:focus-visible,:root:not([data-theme="dark"]) .tier-option input:focus-visible{outline:0;box-shadow:0 0 0 3px var(--brand-soft)}
+:root:not([data-theme="dark"]) .tier-option input{appearance:none;position:relative;flex:0 0 16px;background:#fff;border:1.5px solid var(--border-strong);border-radius:4px;cursor:pointer}
+:root:not([data-theme="dark"]) .tier-option input:disabled{cursor:default;opacity:1}
+:root:not([data-theme="dark"]) .tier-option input:checked{border-color:var(--brand)}
+:root:not([data-theme="dark"]) .tier-option input:checked::after{content:"";position:absolute;left:4px;top:1px;width:4px;height:8px;border:solid var(--brand);border-width:0 2px 2px 0;transform:rotate(45deg)}
+:root:not([data-theme="dark"]) .tier-option input:focus-visible{outline:0;box-shadow:0 0 0 3px var(--brand-soft)}
 @media (prefers-color-scheme:dark){
-  :root:not([data-theme="light"]) .tier-check input,:root:not([data-theme="light"]) .tier-option input{appearance:auto;background:none;border:0;border-radius:0}
-  :root:not([data-theme="light"]) .tier-check input::after,:root:not([data-theme="light"]) .tier-option input::after{content:none}
+  :root:not([data-theme="light"]) .tier-option input{appearance:auto;background:none;border:0;border-radius:0}
+  :root:not([data-theme="light"]) .tier-option input::after{content:none}
 }
 .family-list{display:flex;flex-wrap:wrap;gap:8px 14px;padding:14px 20px 18px}
 .family-item{display:inline-flex;align-items:center;gap:4px}
@@ -172,6 +169,15 @@ tr:hover td{background:var(--bg-alt)}
 .notice,.readonly{padding:11px 14px;margin-bottom:16px;border-radius:var(--radius);background:var(--brand-soft);color:var(--brand);font-size:13px;font-weight:600}
 .notice.error,.notice.bad{background:rgba(207,34,46,.1);color:var(--danger)}
 .notice.ok{background:rgba(16,185,129,.12);color:var(--success)}
+
+/* ---------------------------------------------------------------- toasts */
+/* Operation results: one top-center toast above modals, hidden after 3s. */
+.toast-root{position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:100;width:max-content;max-width:calc(100vw - 32px);pointer-events:none}
+.toast{padding:11px 16px;border:1px solid var(--border);border-left:4px solid var(--brand);border-radius:var(--radius);background:var(--surface);color:var(--text);box-shadow:var(--shadow-elev);font-size:13px;font-weight:600;overflow-wrap:anywhere;animation:toast-in .18s ease-out}
+.toast.ok{border-left-color:var(--success)}
+.toast.error{border-left-color:var(--danger)}
+@keyframes toast-in{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){.toast{animation:none}}
 .readonly{display:flex;align-items:center;gap:9px;background:rgba(59,130,246,.1);color:var(--info)}
 .readonly span{background:var(--info);color:#fff;border-radius:5px;padding:2px 7px;font-size:10px;text-transform:uppercase;letter-spacing:.6px}
 

@@ -4,11 +4,13 @@ const state = {
   accounts: [],
   routers: {},
   tab: 'providers',
-  message: null,
+  toast: null,
+  toastTimer: null,
   quotas: {},
   sponsors: [],
   models: [],
   modelFamilies: [],
+  modelTiers: [],
   users: [],
   audit: { items: [], page: 1, pageSize: 20, total: 0, totalPages: 1 },
   settings: null,
@@ -121,15 +123,33 @@ async function api(path, options = {}) {
   return body;
 }
 
+const TOAST_MS = 3000;
+
+// Every operation result, success or failure, is a top-center toast that hides
+// after 3s. Input errors stay beside their form instead.
+function showToast(text, kind = 'error') {
+  if (state.toastTimer) clearTimeout(state.toastTimer);
+  const id = (state.toast?.id || 0) + 1;
+  state.toast = { id, text, kind };
+  renderToast();
+  state.toastTimer = setTimeout(() => {
+    if (state.toast?.id !== id) return;
+    state.toast = null;
+    state.toastTimer = null;
+    renderToast();
+  }, TOAST_MS);
+}
+
+function renderToast() {
+  const root = $('toast-root');
+  if (!root) return;
+  root.innerHTML = state.toast ? '<div class="toast ' + esc(state.toast.kind) + '" role="' + (state.toast.kind === 'ok' ? 'status' : 'alert') + '">' +
+    esc(state.toast.text) + '</div>' : '';
+}
+
 function notify(text, kind = 'error') {
-  state.message = { text, kind };
   render();
-  if (kind === 'ok') setTimeout(() => {
-    if (state.message?.text === text) {
-      state.message = null;
-      render();
-    }
-  }, 4000);
+  showToast(text, kind);
 }
 
 async function refresh() {
@@ -192,6 +212,7 @@ async function loadSponsors() {
 async function loadModels() {
   state.models = await api('/api/models');
   state.modelFamilies = await api('/api/model-families');
+  state.modelTiers = await api('/api/model-tiers');
 }
 
 async function loadAdmin() {
@@ -451,7 +472,26 @@ function sponsorsView() {
   return groups || '<div class="panel empty">No sponsors available.</div>';
 }
 
-const MODEL_TIERS = ['Ultra', 'Max', 'High', 'Medium'];
+// Tiers and families are both admin-managed tag catalogs with the same UI.
+const TAG_KINDS = {
+  tier: { list: 'modelTiers', path: '/api/model-tiers', label: 'Tier', heading: 'Model tier', intro: 'Rank models by capability tier.', placeholder: 'model-max' },
+  family: { list: 'modelFamilies', path: '/api/model-families', label: 'Family', heading: 'Model family', intro: 'Group models across families.', placeholder: 'code' },
+};
+
+function tagLabel(entry) {
+  return '<span class="family-tag">#' + entry.id + ' ' + esc(entry.title) + '</span>';
+}
+
+function tagPanel(kind, admin) {
+  const config = TAG_KINDS[kind];
+  const name = config.label.toLowerCase();
+  const tags = state[config.list].map((tag) => '<div class="family-item">' + tagLabel(tag) +
+    (admin ? '<button data-edit-' + kind + '="' + tag.id + '" aria-label="Rename ' + name + ' ' + esc(tag.title) + '">Edit</button>' +
+      '<button class="danger" data-delete-' + kind + '="' + tag.id + '" aria-label="Delete ' + name + ' ' + esc(tag.title) + '">Delete</button>' : '') + '</div>').join('');
+  return '<div class="panel"><div class="panel-head"><div><h2>' + config.heading + '</h2><p>' + config.intro + '</p></div>' +
+    (admin ? '<button class="primary" id="add-' + kind + '">Add</button>' : '') + '</div><div class="family-list">' +
+    (tags || '<p class="field-hint">No ' + (kind === 'family' ? 'families' : 'tiers') + ' yet.</p>') + '</div></div>';
+}
 
 function formatPrice(value) {
   return '$' + Number(value).toLocaleString('en-US', { maximumFractionDigits: 8 });
@@ -459,12 +499,8 @@ function formatPrice(value) {
 
 function modelView() {
   const admin = state.me?.role === 'admin';
-  const familyTags = state.modelFamilies.map((family) => '<div class="family-item"><span class="family-tag">#' + family.id + ' ' + esc(family.title) + '</span>' +
-    (admin ? '<button data-edit-family="' + family.id + '" aria-label="Rename family ' + esc(family.title) + '">Edit</button>' +
-      '<button class="danger" data-delete-family="' + family.id + '" aria-label="Delete family ' + esc(family.title) + '">Delete</button>' : '') + '</div>').join('');
   const rows = state.models.map((item, index) => {
-    const tiers = MODEL_TIERS.map((tier) => '<label class="tier-check"><input type="checkbox" disabled' +
-      (item.tiers.includes(tier) ? ' checked' : '') + ' aria-label="' + tier + ' tier for ' + esc(item.model) + '"><span>' + tier + '</span></label>').join('');
+    const tiers = (item.tiers || []).map(tagLabel).join('');
     const currentStatus = item.status || 'inactive';
     const statusCell = admin ? '<label class="model-switch"><input type="checkbox" data-status-model="' + item.id + '" role="switch" aria-label="Activate ' + esc(item.model) + '"' +
       (currentStatus === 'active' ? ' checked' : '') + '><span>' + currentStatus + '</span></label>' : '<span>' + currentStatus + '</span>';
@@ -472,14 +508,12 @@ function modelView() {
       '<button data-move-model="' + item.id + '" data-direction="up" aria-label="Move ' + esc(item.model) + ' up"' + (index === 0 ? ' disabled' : '') + '>↑</button>' +
       '<button data-move-model="' + item.id + '" data-direction="down" aria-label="Move ' + esc(item.model) + ' down"' + (index === state.models.length - 1 ? ' disabled' : '') + '>↓</button>' +
       '<button data-edit-model="' + item.id + '">Edit</button><button class="danger" data-delete-model="' + item.id + '">Delete</button></td>' : '';
-    const family = (item.families || []).map((entry) => '<span class="family-tag">#' + entry.id + ' ' + esc(entry.title) + '</span>').join('');
+    const family = (item.families || []).map(tagLabel).join('');
     return '<tr><td class="model-index">' + (index + 1) + '</td><td><code class="model-id">' + esc(item.model) + '</code></td>' +
-      '<td><div class="tier-group">' + tiers + '</div></td><td class="family-cell">' + (family || '—') + '</td><td>' + statusCell + '</td>' +
+      '<td class="family-cell">' + (tiers || '—') + '</td><td class="family-cell">' + (family || '—') + '</td><td>' + statusCell + '</td>' +
       '<td class="model-price">' + formatPrice(item.inputPrice) + ' / ' + formatPrice(item.outputPrice) + '</td>' + actions + '</tr>';
   }).join('');
-  return '<div class="panel"><div class="panel-head"><div><h2>Model family</h2><p>Group models across families.</p></div>' +
-    (admin ? '<button class="primary" id="add-family">Add</button>' : '') + '</div><div class="family-list">' +
-    (familyTags || '<p class="field-hint">No families yet.</p>') + '</div></div>' +
+  return tagPanel('tier', admin) + tagPanel('family', admin) +
     '<div class="panel"><div class="panel-head"><div><h2>Model catalog</h2>' +
     '<p>Price per 1M input/output tokens. Reference only; this does not change gateway routing or billing.</p></div>' +
     (admin ? '<button class="primary" id="add-model">Add model</button>' : '') + '</div>' +
@@ -489,13 +523,13 @@ function modelView() {
 }
 
 function editModelModal(modal) {
-  const tiers = MODEL_TIERS.map((tier) => '<label class="tier-option"><input type="checkbox" name="tier" value="' + tier + '"' +
-    (modal.tiers.includes(tier) ? ' checked' : '') + '>' + tier + '</label>').join('');
+  const tiers = state.modelTiers.map((tier) => '<label class="tier-option"><input type="checkbox" name="model-tier" value="' + tier.id + '"' +
+    ((modal.tierIds || []).includes(tier.id) ? ' checked' : '') + '>' + esc(tier.title) + '</label>').join('');
   const families = state.modelFamilies.map((family) => '<label class="tier-option"><input type="checkbox" name="model-family" value="' + family.id + '"' +
     ((modal.familyIds || []).includes(family.id) ? ' checked' : '') + '>' + esc(family.title) + '</label>').join('');
   return modalFrame(modal.id ? 'Edit model' : 'Add model',
     '<form id="model-form"><label for="model-id">Model<input id="model-id" maxlength="160" required autocomplete="off" spellcheck="false" placeholder="provider/model" value="' + esc(modal.model) + '"></label>' +
-    '<fieldset class="tier-fieldset"><legend>Tier</legend><div class="tier-options">' + tiers + '</div><p class="field-hint">Select one or more tiers.</p></fieldset>' +
+    '<fieldset class="tier-fieldset"><legend>Tier</legend><div class="tier-options">' + (tiers || '<span class="field-hint">No tiers yet.</span>') + '</div></fieldset>' +
     '<fieldset class="tier-fieldset"><legend>Model family</legend><div class="tier-options">' + (families || '<span class="field-hint">No families yet.</span>') + '</div></fieldset>' +
     '<label class="model-switch"><input id="model-status" type="checkbox" role="switch"' + (modal.status === 'active' ? ' checked' : '') + '>Active</label>' +
     '<div class="price-fields"><label for="model-input-price">Input price ($/1M)<input id="model-input-price" type="number" min="0" step="any" inputmode="decimal" required value="' + esc(modal.inputPrice) + '"></label>' +
@@ -584,28 +618,31 @@ function resetPasswordModal(modal) {
   '<button id="close-modal">Cancel</button><button class="primary" id="confirm-reset">Reset password</button>');
 }
 
-function familyModal(modal) {
-  return modalFrame(modal.id ? 'Rename model family' : 'Add model family',
-    '<form id="family-form"><label for="family-title">Title<input id="family-title" maxlength="64" required autocomplete="off" spellcheck="false" ' +
-    'pattern="[a-z0-9_-]+" placeholder="code" aria-describedby="family-title-hint" value="' + esc(modal.title) + '"></label>' +
-    '<p class="field-hint" id="family-title-hint">Lowercase letters, digits, - or _; no spaces.</p>' +
+function tagModal(modal) {
+  const config = TAG_KINDS[modal.kind];
+  return modalFrame((modal.id ? 'Rename ' : 'Add ') + config.heading.toLowerCase(),
+    '<form id="tag-form"><label for="tag-title">Title<input id="tag-title" maxlength="64" required autocomplete="off" spellcheck="false" ' +
+    'pattern="[a-z0-9_-]+" placeholder="' + config.placeholder + '" aria-describedby="tag-title-hint" value="' + esc(modal.title) + '"></label>' +
+    '<p class="field-hint" id="tag-title-hint">Lowercase letters, digits, - or _; no spaces.</p>' +
     (modal.error ? '<div class="notice error" role="alert">' + esc(modal.error) + '</div>' : '') + '</form>',
-  '<button id="close-modal" type="button">Cancel</button><button class="primary" id="save-family" type="submit" form="family-form">Save</button>');
+  '<button id="close-modal" type="button">Cancel</button><button class="primary" id="save-tag" type="submit" form="tag-form">Save</button>');
 }
 
 function deleteModelModal(modal) {
   return modalFrame('Delete model', '<p>Delete <code>' + esc(modal.model) + '</code> from the catalog?</p>' +
-    '<div class="notice bad">Its family links are removed too. This cannot be undone.</div>' +
+    '<div class="notice bad">Its tier and family links are removed too. This cannot be undone.</div>' +
     (modal.error ? '<div class="notice error" role="alert">' + esc(modal.error) + '</div>' : ''),
   '<button id="close-modal">Cancel</button><button class="danger" id="confirm-delete-model">Delete model</button>');
 }
 
-function deleteFamilyModal(modal) {
+function deleteTagModal(modal) {
+  const config = TAG_KINDS[modal.kind];
+  const name = config.label.toLowerCase();
   const usage = modal.modelCount ? 'It is removed from ' + modal.modelCount + ' model' + (modal.modelCount === 1 ? '' : 's') + ' first. ' : '';
-  return modalFrame('Delete model family', '<p>Delete family <strong>' + esc(modal.title) + '</strong>?</p>' +
+  return modalFrame('Delete ' + config.heading.toLowerCase(), '<p>Delete ' + name + ' <strong>' + esc(modal.title) + '</strong>?</p>' +
     '<div class="notice bad">' + usage + 'This cannot be undone.</div>' +
     (modal.error ? '<div class="notice error" role="alert">' + esc(modal.error) + '</div>' : ''),
-  '<button id="close-modal">Cancel</button><button class="danger" id="confirm-delete-family">Delete family</button>');
+  '<button id="close-modal">Cancel</button><button class="danger" id="confirm-delete-tag">Delete ' + name + '</button>');
 }
 
 function removeUserModal(modal) {
@@ -641,9 +678,9 @@ function modalView() {
   if (state.modal.type === 'remove-user') return removeUserModal(state.modal);
   if (state.modal.type === 'edit-account') return editAccountModal(state.modal);
   if (state.modal.type === 'model') return editModelModal(state.modal);
-  if (state.modal.type === 'family') return familyModal(state.modal);
+  if (state.modal.type === 'tag') return tagModal(state.modal);
   if (state.modal.type === 'delete-model') return deleteModelModal(state.modal);
-  if (state.modal.type === 'delete-family') return deleteFamilyModal(state.modal);
+  if (state.modal.type === 'delete-tag') return deleteTagModal(state.modal);
   return '';
 }
 
@@ -664,13 +701,12 @@ function bindBrowserNavigation() {
 
 function render(extra) {
   document.body.classList.toggle('signed-out', !state.me);
-  const banner = state.message ? '<div class="notice ' + esc(state.message.kind) + '">' + esc(state.message.text) + '</div>' : '';
   if ($('theme-slot')) $('theme-slot').innerHTML = themeButton();
   if (!state.me) {
     $('session').innerHTML = '';
     $('nav').innerHTML = '';
     $('page-title').textContent = 'Sign in';
-    $('main').innerHTML = banner + loginView();
+    $('main').innerHTML = loginView();
     $('modal-root').innerHTML = '';
     bind();
     return;
@@ -702,7 +738,7 @@ function render(extra) {
         : state.tab === 'sponsors'
           ? sponsorsView()
           : providersView();
-  $('main').innerHTML = banner + content;
+  $('main').innerHTML = content;
   $('modal-root').innerHTML = modalView();
   bind();
   if ($('edit-account-name') && state.modal?.focusName) {
@@ -805,18 +841,21 @@ function bind() {
     state.modal = { type: 'delete-model', id: item.id, model: item.model, error: null };
     render();
   }; });
-  if ($('add-family')) $('add-family').onclick = () => openFamilyModal();
-  document.querySelectorAll('[data-edit-family]').forEach((element) => {
-    element.onclick = () => openFamilyModal(state.modelFamilies.find((family) => String(family.id) === element.dataset.editFamily));
-  });
-  document.querySelectorAll('[data-delete-family]').forEach((element) => { element.onclick = () => {
-    const family = state.modelFamilies.find((entry) => String(entry.id) === element.dataset.deleteFamily);
-    state.modal = { type: 'delete-family', id: family.id, title: family.title, modelCount: family.modelCount, error: null };
-    render();
-  }; });
-  if ($('family-form')) $('family-form').onsubmit = (event) => { event.preventDefault(); saveFamily(); };
+  for (const [kind, config] of Object.entries(TAG_KINDS)) {
+    const find = (id) => state[config.list].find((tag) => String(tag.id) === id);
+    if ($('add-' + kind)) $('add-' + kind).onclick = () => openTagModal(kind);
+    document.querySelectorAll('[data-edit-' + kind + ']').forEach((element) => {
+      element.onclick = () => openTagModal(kind, find(element.getAttribute('data-edit-' + kind)));
+    });
+    document.querySelectorAll('[data-delete-' + kind + ']').forEach((element) => { element.onclick = () => {
+      const tag = find(element.getAttribute('data-delete-' + kind));
+      state.modal = { type: 'delete-tag', kind, id: tag.id, title: tag.title, modelCount: tag.modelCount, error: null };
+      render();
+    }; });
+  }
+  if ($('tag-form')) $('tag-form').onsubmit = (event) => { event.preventDefault(); saveTag(); };
   if ($('confirm-delete-model')) $('confirm-delete-model').onclick = deleteModel;
-  if ($('confirm-delete-family')) $('confirm-delete-family').onclick = deleteFamily;
+  if ($('confirm-delete-tag')) $('confirm-delete-tag').onclick = deleteTag;
   if ($('audit-prev')) $('audit-prev').onclick = async () => { await loadAudit(state.audit.page - 1); render(); };
   if ($('audit-next')) $('audit-next').onclick = async () => { await loadAudit(state.audit.page + 1); render(); };
   if ($('create-user-form')) $('create-user-form').onsubmit = (event) => { event.preventDefault(); createUser(); };
@@ -836,29 +875,28 @@ function bind() {
 
 function openModelModal(item = null) {
   state.modal = item
-    ? { type: 'model', id: item.id, model: item.model, tiers: [...item.tiers], familyIds: (item.families || []).map((family) => family.id),
+    ? { type: 'model', id: item.id, model: item.model, tierIds: (item.tiers || []).map((tier) => tier.id), familyIds: (item.families || []).map((family) => family.id),
       status: item.status || 'inactive', inputPrice: item.inputPrice, outputPrice: item.outputPrice, error: null }
-    : { type: 'model', id: null, model: '', tiers: [], familyIds: [], status: 'inactive', inputPrice: '', outputPrice: '', error: null };
+    : { type: 'model', id: null, model: '', tierIds: [], familyIds: [], status: 'inactive', inputPrice: '', outputPrice: '', error: null };
   render();
   if ($('model-id')) $('model-id').focus();
 }
 
 async function saveModel() {
-  const tiers = [...document.querySelectorAll('input[name="tier"]:checked')].map((input) => input.value);
+  const tierIds = [...document.querySelectorAll('input[name="model-tier"]:checked')].map((input) => Number(input.value)).filter(Number.isSafeInteger);
   const familyIds = [...document.querySelectorAll('input[name="model-family"]:checked')].map((input) => Number(input.value)).filter(Number.isSafeInteger);
   const status = $('model-status')?.checked ? 'active' : 'inactive';
   const payload = {
     model: $('model-id').value.trim(),
-    tiers,
+    tierIds,
     familyIds,
     status,
     inputPrice: Number($('model-input-price').value),
     outputPrice: Number($('model-output-price').value),
   };
-  Object.assign(state.modal, { model: $('model-id').value, tiers, familyIds, status, inputPrice: $('model-input-price').value, outputPrice: $('model-output-price').value });
+  Object.assign(state.modal, { model: $('model-id').value, tierIds, familyIds, status, inputPrice: $('model-input-price').value, outputPrice: $('model-output-price').value });
   const invalid = !payload.model ? 'Model is required.'
-    : !tiers.length ? 'Select at least one tier.'
-      : $('model-input-price').value === '' || $('model-output-price').value === '' || payload.inputPrice < 0 || payload.outputPrice < 0 ? 'Enter non-negative input and output prices.' : null;
+    : $('model-input-price').value === '' || $('model-output-price').value === '' || payload.inputPrice < 0 || payload.outputPrice < 0 ? 'Enter non-negative input and output prices.' : null;
   if (invalid) {
     state.modal.error = invalid;
     render();
@@ -885,14 +923,15 @@ async function saveModel() {
   }
 }
 
-function openFamilyModal(item = null) {
-  state.modal = { type: 'family', id: item?.id || null, title: item?.title || '', error: null };
+function openTagModal(kind, item = null) {
+  state.modal = { type: 'tag', kind, id: item?.id || null, title: item?.title || '', error: null };
   render();
-  $('family-title')?.focus();
+  $('tag-title')?.focus();
 }
 
-async function saveFamily() {
-  const title = $('family-title').value.trim();
+async function saveTag() {
+  const { label, path } = TAG_KINDS[state.modal.kind];
+  const title = $('tag-title').value.trim();
   state.modal.title = title;
   if (!/^[a-z0-9_-]{1,64}$/.test(title)) {
     state.modal.error = 'Use 1–64 lowercase letters, digits, hyphens or underscores.';
@@ -900,35 +939,34 @@ async function saveFamily() {
     return;
   }
   const id = state.modal.id;
-  const button = $('save-family');
+  const button = $('save-tag');
   button.disabled = true;
   try {
-    await api(id ? '/api/model-families/' + id : '/api/model-families', {
+    await api(id ? path + '/' + id : path, {
       method: id ? 'PATCH' : 'POST', body: JSON.stringify({ title }),
     });
     state.modal = null;
     await loadModels();
-    render();
-    notify(id ? 'Family renamed.' : 'Family added.', 'ok');
+    notify(label + (id ? ' renamed.' : ' added.'), 'ok');
   } catch (error) {
     if (state.modal) { state.modal.error = error.message; render(); }
-    else notify('Family saved, but the catalog could not reload: ' + error.message);
+    else notify(label + ' saved, but the catalog could not reload: ' + error.message);
   }
 }
 
-async function deleteFamily() {
+async function deleteTag() {
+  const { label, path } = TAG_KINDS[state.modal.kind];
   const id = state.modal.id;
-  const button = $('confirm-delete-family');
+  const button = $('confirm-delete-tag');
   button.disabled = true;
   try {
-    const result = await api('/api/model-families/' + id, { method: 'DELETE' });
+    const result = await api(path + '/' + id, { method: 'DELETE' });
     state.modal = null;
     await loadModels();
-    render();
-    notify('Family deleted; unlinked from ' + result.unlinkedModels + ' model' + (result.unlinkedModels === 1 ? '' : 's') + '.', 'ok');
+    notify(label + ' deleted; unlinked from ' + result.unlinkedModels + ' model' + (result.unlinkedModels === 1 ? '' : 's') + '.', 'ok');
   } catch (error) {
     if (state.modal) { state.modal.error = error.message; render(); }
-    else notify('Family deleted, but the catalog could not reload: ' + error.message);
+    else notify(label + ' deleted, but the catalog could not reload: ' + error.message);
   }
 }
 
@@ -940,7 +978,6 @@ async function deleteModel() {
     await api('/api/models/' + id, { method: 'DELETE' });
     state.modal = null;
     await loadModels();
-    render();
     notify('Model deleted.', 'ok');
   } catch (error) {
     if (state.modal) { state.modal.error = error.message; render(); }
@@ -1024,7 +1061,7 @@ async function completeOAuth() {
   try {
     await api('/api/oauth/' + state.modal.provider + '/complete', { method: 'POST', body: JSON.stringify({ callback }) });
     state.modal = null;
-    state.message = { text: 'OAuth connected. Credential synced to the routers.', kind: 'ok' };
+    showToast('OAuth connected. Credential synced to the routers.', 'ok');
     await refresh();
   } catch (error) {
     state.modal.error = error.message;
@@ -1051,7 +1088,7 @@ async function updateAccountName() {
       method: 'PATCH', body: JSON.stringify({ displayName }),
     });
     state.modal = null;
-    state.message = { text: 'Claude account name updated. Check router sync status below.', kind: 'ok' };
+    showToast('Claude account name updated. Check router sync status below.', 'ok');
     await refresh();
   } catch (error) {
     state.modal.name = input.value;
@@ -1069,7 +1106,7 @@ async function submitLogin() {
     state.loginNotice = null;
     await selectTab(tabFromPath(window.location.pathname), { replaceHistory: true });
   } catch (error) {
-    // Login problems belong to the card, not to the page-wide banner.
+    // Login problems belong to the card, not to a toast.
     state.loginError = error.message;
     state.loginNotice = null;
     render();
@@ -1085,7 +1122,7 @@ async function registerUser() {
     state.me = await api('/api/register', { method: 'POST', body: JSON.stringify(credentials) });
     state.loginError = null;
     state.loginNotice = null;
-    state.message = { text: 'User created successfully.', kind: 'ok' };
+    showToast('User created successfully.', 'ok');
     await selectTab('providers', { replaceHistory: true });
   } catch (error) {
     state.loginError = error.message;
@@ -1108,7 +1145,7 @@ async function changePassword() {
     state.me = await api('/api/me');
     state.view = null;
     state.passwordError = null;
-    state.message = { text: 'Password updated.', kind: 'ok' };
+    showToast('Password updated.', 'ok');
     await refresh();
   } catch (error) {
     state.passwordError = error.message;
@@ -1124,7 +1161,7 @@ async function createUser() {
       password: $('new-pass').value,
       role: $('new-role').value,
     }) });
-    state.message = { text: 'User created.', kind: 'ok' };
+    showToast('User created.', 'ok');
     await loadAdmin(); render();
   });
 }
@@ -1136,7 +1173,7 @@ async function updateRefreshSettings() {
       method: 'PATCH',
       body: JSON.stringify({ refreshLeadHours: Number($('refresh-lead-hours').value) }),
     });
-    state.message = { text: 'Token refresh lead time updated.', kind: 'ok' };
+    showToast('Token refresh lead time updated.', 'ok');
     render();
   });
 }
@@ -1152,7 +1189,7 @@ async function updateQuotaSettings() {
         sessionQuotaAutoEnable: $('quota-auto-enable').checked,
       }),
     });
-    state.message = { text: 'Quota automation updated.', kind: 'ok' };
+    showToast('Quota automation updated.', 'ok');
     render();
   });
 }
@@ -1167,7 +1204,7 @@ async function updateMyQuotaSettings() {
         sessionQuotaAutoEnable: $('user-quota-auto-enable').checked,
       }),
     });
-    state.message = { text: 'Your quota policy was updated.', kind: 'ok' };
+    showToast('Your quota policy was updated.', 'ok');
     render();
   });
 }
@@ -1175,7 +1212,7 @@ async function resetMyQuotaSettings() {
   const button = $('use-admin-quota-defaults');
   await act(button, async () => {
     state.quotaPolicy = await api('/api/me/quota-settings', { method: 'DELETE' });
-    state.message = { text: 'Your policy now follows the admin defaults.', kind: 'ok' };
+    showToast('Your policy now follows the admin defaults.', 'ok');
     render();
   });
 }
@@ -1194,7 +1231,6 @@ async function updateUserRole(element) {
       return;
     }
     await loadAdmin();
-    render();
     notify('User role updated.', 'ok');
   } catch (error) {
     element.value = previousRole;
@@ -1215,7 +1251,7 @@ async function resetUserPassword() {
     });
     const username = state.modal.username;
     state.modal = null;
-    state.message = { text: 'Password reset for ' + username + '.', kind: 'ok' };
+    showToast('Password reset for ' + username + '.', 'ok');
     await loadAdmin(); render();
   } catch (error) {
     state.modal.error = error.message;
@@ -1228,7 +1264,7 @@ async function removeUser() {
     const username = state.modal.username;
     await api('/api/admin/users/' + state.modal.id, { method: 'DELETE' });
     state.modal = null;
-    state.message = { text: 'User ' + username + ' removed.', kind: 'ok' };
+    showToast('User ' + username + ' removed.', 'ok');
     await loadAdmin(); render();
   } catch (error) {
     state.modal.error = error.message;

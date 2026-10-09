@@ -23,6 +23,45 @@ const initialModels = [
   ['openai/gpt-5.6-luna', 'Medium', 0.2, 1.2],
 ];
 
+const legacyTierTitles = new Map([
+  ['Ultra', 'model-ultra'], ['Max', 'model-max'],
+  ['High', 'model-high'], ['Medium', 'model-medium'],
+]);
+
+// The legacy JSON column stays populated with 1.5 tier names so a rolled-back
+// image can still read and edit rows that use the four original tiers.
+export function legacyTierValue(titles) {
+  const legacy = new Map([...legacyTierTitles].map(([name, title]) => [title, name]));
+  return JSON.stringify(titles.map((title) => legacy.get(title) ?? title));
+}
+
+// One-time conversion from the hard-coded tier list to admin-managed tiers.
+// The sentinel keeps tiers an admin later deletes from being recreated.
+export function migrateModelTiers(db) {
+  if (db.prepare("SELECT value FROM app_settings WHERE key = 'model_tiers_migrated'").get()) return;
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    const insertTier = db.prepare('INSERT INTO model_tiers (title) VALUES (?)');
+    const tierByTitle = new Map(db.prepare('SELECT id, title FROM model_tiers').all().map(({ id, title }) => [title, id]));
+    for (const title of legacyTierTitles.values()) {
+      if (!tierByTitle.has(title)) tierByTitle.set(title, insertTier.run(title).lastInsertRowid);
+    }
+    const link = db.prepare('INSERT OR IGNORE INTO model_tier_links (model_id, tier_id) VALUES (?, ?)');
+    for (const model of db.prepare('SELECT id, tiers FROM model_catalog').all()) {
+      const names = JSON.parse(model.tiers).map((tier) => legacyTierTitles.get(tier) ?? tier);
+      for (const name of names) {
+        if (!tierByTitle.has(name)) tierByTitle.set(name, insertTier.run(name).lastInsertRowid);
+        link.run(model.id, tierByTitle.get(name));
+      }
+    }
+    db.prepare("INSERT INTO app_settings (key, value) VALUES ('model_tiers_migrated', '1')").run();
+    db.exec('COMMIT');
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
+}
+
 export function seedModelCatalog(db) {
   const insert = db.prepare('INSERT OR IGNORE INTO model_catalog (model, tiers, input_price, output_price, position) VALUES (?, ?, ?, ?, ?)');
   // Seed once only: the sentinel keeps later restarts from re-adding seed rows

@@ -3,7 +3,7 @@ import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { schema } from './schema.js';
 import { migrate } from './migrate.js';
-import { seedModelCatalog } from './model-catalog.js';
+import { migrateModelTiers, seedModelCatalog } from './model-catalog.js';
 
 export function openDatabase(path) {
   if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true });
@@ -11,5 +11,6 @@ export function openDatabase(path) {
   migrate(db);
   db.exec(schema);
   seedModelCatalog(db);
+  migrateModelTiers(db);
   return db;
 }
