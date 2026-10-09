@@ -24,7 +24,7 @@ test('catalog seeds 20 distinct models once', async (t) => {
   assert.deepEqual(first.json().slice(0, 2).map((row) => row.model), [
     'anthropic/claude-fable-5', 'openai/gpt-6-astra',
   ]);
-  assert.deepEqual(first.json()[0].tiers, ['Ultra']);
+  assert.deepEqual(first.json()[0].tiers, [{ id: 1, title: 'model-ultra' }]);
   assert.equal(first.json()[0].inputPrice, 10);
   assert.equal(first.json()[0].outputPrice, 50);
   assert.ok(first.json().every((model) => model.status === 'inactive' && model.families.length === 0));
@@ -53,17 +53,17 @@ test('all users can read models but only admins can add, edit and reorder', asyn
   const admin = await member(db, app, 'admin', 'admin');
   assert.equal((await app.inject({ method: 'GET', url: '/api/models' })).statusCode, 401);
   assert.equal((await app.inject({ method: 'GET', url: '/api/models', headers: { cookie: user.cookie } })).statusCode, 200);
-  const payload = { model: 'custom/new-model', tiers: ['Ultra', 'Medium'], inputPrice: 0.01, outputPrice: 0.5 };
+  const payload = { model: 'custom/new-model', tierIds: [1, 4], inputPrice: 0.01, outputPrice: 0.5 };
   assert.equal((await app.inject({ method: 'POST', url: '/api/models', headers: authHeaders(user), payload })).statusCode, 403);
   const created = await app.inject({ method: 'POST', url: '/api/models', headers: authHeaders(admin), payload });
   assert.equal(created.statusCode, 201);
-  assert.deepEqual(created.json().tiers, ['Ultra', 'Medium']);
+  assert.deepEqual(created.json().tiers.map((tier) => tier.title), ['model-ultra', 'model-medium']);
   const id = created.json().id;
   assert.equal((await app.inject({ method: 'PATCH', url: '/api/models/' + id, headers: authHeaders(user), payload })).statusCode, 403);
   assert.equal((await app.inject({ method: 'POST', url: '/api/models/' + id + '/move', headers: authHeaders(user), payload: { direction: 'up' } })).statusCode, 403);
-  const changed = await app.inject({ method: 'PATCH', url: '/api/models/' + id, headers: authHeaders(admin), payload: { ...payload, tiers: ['Max', 'High'] } });
+  const changed = await app.inject({ method: 'PATCH', url: '/api/models/' + id, headers: authHeaders(admin), payload: { ...payload, tierIds: [2, 3] } });
   assert.equal(changed.statusCode, 200);
-  assert.deepEqual(changed.json().tiers, ['Max', 'High']);
+  assert.deepEqual(changed.json().tiers.map((tier) => tier.title), ['model-max', 'model-high']);
   const moved = await app.inject({ method: 'POST', url: '/api/models/' + id + '/move', headers: authHeaders(admin), payload: { direction: 'up' } });
   assert.equal(moved.statusCode, 200);
   const listing = (await app.inject({ method: 'GET', url: '/api/models', headers: { cookie: user.cookie } })).json();
@@ -77,7 +77,7 @@ test('catalog accepts provider IDs with uppercase and variant suffixes', async (
   const admin = await member(db, app, 'admin', 'admin');
   for (const model of ['meta-llama/Llama-3.1-8B-Instruct', 'deepseek/deepseek-r1:free']) {
     const result = await app.inject({ method: 'POST', url: '/api/models', headers: authHeaders(admin),
-      payload: { model, tiers: ['High'], inputPrice: 0.00005, outputPrice: 1 } });
+      payload: { model, tierIds: [3], inputPrice: 0.00005, outputPrice: 1 } });
     assert.equal(result.statusCode, 201, model);
   }
 });
@@ -91,11 +91,11 @@ test('catalog mutation rolls back when audit insert fails', async (t) => {
   const count = db.prepare('SELECT count(*) AS n FROM model_catalog').get().n;
   db.exec("CREATE TRIGGER reject_model_audit BEFORE INSERT ON audit_log WHEN NEW.action IN ('admin.create_model', 'admin.update_model') BEGIN SELECT RAISE(ABORT, 'audit unavailable'); END");
   const update = await app.inject({ method: 'PATCH', url: '/api/models/' + before.id, headers: authHeaders(admin),
-    payload: { model, tiers: ['Medium'], inputPrice: 20, outputPrice: 100 } });
+    payload: { model, tierIds: [4], inputPrice: 20, outputPrice: 100 } });
   assert.equal(update.statusCode, 500);
   assert.deepEqual(db.prepare('SELECT * FROM model_catalog WHERE model = ?').get(model), before);
   const create = await app.inject({ method: 'POST', url: '/api/models', headers: authHeaders(admin),
-    payload: { model: 'custom/no-audit', tiers: ['High'], inputPrice: 1, outputPrice: 1 } });
+    payload: { model: 'custom/no-audit', tierIds: [3], inputPrice: 1, outputPrice: 1 } });
   assert.equal(create.statusCode, 500);
   assert.equal(db.prepare('SELECT count(*) AS n FROM model_catalog').get().n, count);
 });
@@ -127,7 +127,7 @@ test('model writes require CSRF and reorder rejects edges and unknown rows', asy
   assert.equal((await move(last, 'down')).statusCode, 400);
   assert.equal((await move(first, 'left')).statusCode, 400);
   assert.equal((await move(999999, 'up')).statusCode, 404);
-  const missing = await app.inject({ method: 'PATCH', url: '/api/models/999999', headers: authHeaders(admin), payload: { model: 'custom/x', tiers: ['Max'], inputPrice: 1, outputPrice: 1 } });
+  const missing = await app.inject({ method: 'PATCH', url: '/api/models/999999', headers: authHeaders(admin), payload: { model: 'custom/x', tierIds: [2], inputPrice: 1, outputPrice: 1 } });
   assert.equal(missing.statusCode, 404);
   assert.equal(db.prepare('SELECT id FROM model_catalog ORDER BY position LIMIT 1').get().id, first);
 });
@@ -138,15 +138,15 @@ test('invalid or duplicate models cannot change catalog', async (t) => {
   const admin = await member(db, app, 'admin', 'admin');
   const initial = db.prepare('SELECT count(*) AS n FROM model_catalog').get().n;
   for (const model of ['', '<script>', 'custom model', 'anthropic/claude-fable-5']) {
-    const result = await app.inject({ method: 'POST', url: '/api/models', headers: authHeaders(admin), payload: { model, tiers: ['Max'], inputPrice: 1, outputPrice: 1 } });
+    const result = await app.inject({ method: 'POST', url: '/api/models', headers: authHeaders(admin), payload: { model, tierIds: [2], inputPrice: 1, outputPrice: 1 } });
     assert.equal(result.statusCode, 400, model);
   }
-  for (const tiers of [[], ['Unknown'], ['Ultra', 'Ultra'], 'Max']) {
-    const result = await app.inject({ method: 'POST', url: '/api/models', headers: authHeaders(admin), payload: { model: 'custom/new-model', tiers, inputPrice: 1, outputPrice: 1 } });
+  for (const tierIds of [[9999], [1, 1], ['1'], 'model-max']) {
+    const result = await app.inject({ method: 'POST', url: '/api/models', headers: authHeaders(admin), payload: { model: 'custom/new-model', tierIds, inputPrice: 1, outputPrice: 1 } });
     assert.equal(result.statusCode, 400);
   }
   for (const price of [-1, 'free', Infinity]) {
-    const result = await app.inject({ method: 'POST', url: '/api/models', headers: authHeaders(admin), payload: { model: 'custom/new-model', tiers: ['Max'], inputPrice: price, outputPrice: 1 } });
+    const result = await app.inject({ method: 'POST', url: '/api/models', headers: authHeaders(admin), payload: { model: 'custom/new-model', tierIds: [2], inputPrice: price, outputPrice: 1 } });
     assert.equal(result.statusCode, 400);
   }
   assert.equal(db.prepare('SELECT count(*) AS n FROM model_catalog').get().n, initial);
@@ -191,7 +191,7 @@ test('models link multiple families and deleting a family unlinks all models ato
   const add = async (title) => (await app.inject({ method: 'POST', url: '/api/model-families', headers: authHeaders(admin), payload: { title } })).json().id;
   const code = await add('code');
   const agent = await add('agent');
-  const payload = { model: 'custom/one', tiers: ['High'], inputPrice: 1, outputPrice: 2, status: 'active', familyIds: [code, agent] };
+  const payload = { model: 'custom/one', tierIds: [3], inputPrice: 1, outputPrice: 2, status: 'active', familyIds: [code, agent] };
   const created = await app.inject({ method: 'POST', url: '/api/models', headers: authHeaders(admin), payload });
   assert.equal(created.statusCode, 201);
   assert.equal(created.json().status, 'active');
@@ -200,7 +200,7 @@ test('models link multiple families and deleting a family unlinks all models ato
   const other = db.prepare('SELECT id FROM model_catalog ORDER BY id LIMIT 1').get().id;
   const seed = db.prepare('SELECT model, tiers, input_price, output_price FROM model_catalog WHERE id = ?').get(other);
   assert.equal((await app.inject({ method: 'PATCH', url: '/api/models/' + other, headers: authHeaders(admin), payload: {
-    model: seed.model, tiers: JSON.parse(seed.tiers), inputPrice: seed.input_price, outputPrice: seed.output_price, familyIds: [code], status: 'inactive',
+    model: seed.model, tierIds: [1], inputPrice: seed.input_price, outputPrice: seed.output_price, familyIds: [code], status: 'inactive',
   } })).statusCode, 200);
   assert.equal((await app.inject({ method: 'GET', url: '/api/model-families', headers: authHeaders(admin) })).json()[0].modelCount, 2);
   const bad = await app.inject({ method: 'PATCH', url: '/api/models/' + id, headers: authHeaders(admin), payload: { ...payload, familyIds: [code, 99999] } });
@@ -222,7 +222,7 @@ test('model status defaults inactive, validates status and family IDs, and toggl
   t.after(() => { app.close(); db.close(); });
   const user = await member(db, app, 'alice');
   const admin = await member(db, app, 'admin', 'admin');
-  const payload = { model: 'custom/status', tiers: ['Medium'], inputPrice: 0, outputPrice: 1 };
+  const payload = { model: 'custom/status', tierIds: [4], inputPrice: 0, outputPrice: 1 };
   const created = await app.inject({ method: 'POST', url: '/api/models', headers: authHeaders(admin), payload });
   assert.equal(created.json().status, 'inactive');
   assert.deepEqual(created.json().families, []);
@@ -245,7 +245,7 @@ test('model deletion requires admin and CSRF, clears links, and rolls back on au
   const user = await member(db, app, 'alice');
   const admin = await member(db, app, 'admin', 'admin');
   const family = (await app.inject({ method: 'POST', url: '/api/model-families', headers: authHeaders(admin), payload: { title: 'code' } })).json().id;
-  const payload = { model: 'custom/delete-me', tiers: ['High'], inputPrice: 1, outputPrice: 2, familyIds: [family] };
+  const payload = { model: 'custom/delete-me', tierIds: [3], inputPrice: 1, outputPrice: 2, familyIds: [family] };
   const id = (await app.inject({ method: 'POST', url: '/api/models', headers: authHeaders(admin), payload })).json().id;
   const url = '/api/models/' + id;
   assert.equal((await app.inject({ method: 'DELETE', url, headers: authHeaders(user) })).statusCode, 403);
@@ -265,7 +265,7 @@ test('audit view names deleted models and model families', async (t) => {
   t.after(() => { app.close(); db.close(); });
   const admin = await member(db, app, 'admin', 'admin');
   const family = (await app.inject({ method: 'POST', url: '/api/model-families', headers: authHeaders(admin), payload: { title: 'code' } })).json().id;
-  const id = (await app.inject({ method: 'POST', url: '/api/models', headers: authHeaders(admin), payload: { model: 'custom/gone', tiers: ['High'], inputPrice: 1, outputPrice: 2 } })).json().id;
+  const id = (await app.inject({ method: 'POST', url: '/api/models', headers: authHeaders(admin), payload: { model: 'custom/gone', tierIds: [3], inputPrice: 1, outputPrice: 2 } })).json().id;
   await app.inject({ method: 'DELETE', url: '/api/models/' + id, headers: authHeaders(admin) });
   await app.inject({ method: 'DELETE', url: '/api/model-families/' + family, headers: authHeaders(admin) });
   const items = (await app.inject({ method: 'GET', url: '/api/admin/audit?page=1&pageSize=20', headers: { cookie: admin.cookie } })).json().items;

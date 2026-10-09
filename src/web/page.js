@@ -30,6 +30,7 @@ export function renderApp() {
   <main id="main"></main>
 </div>
 <div id="modal-root"></div>
+<div id="toast-root" class="toast-root" aria-live="polite" aria-atomic="true"></div>
 <script type="module" src="${assets.script.path}"></script>
 </body>
 </html>`;
