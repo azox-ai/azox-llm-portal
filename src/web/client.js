@@ -8,6 +8,7 @@ const state = {
   quotas: {},
   sponsors: [],
   models: [],
+  modelFamilies: [],
   users: [],
   audit: { items: [], page: 1, pageSize: 20, total: 0, totalPages: 1 },
   settings: null,
@@ -190,6 +191,7 @@ async function loadSponsors() {
 
 async function loadModels() {
   state.models = await api('/api/models');
+  state.modelFamilies = await api('/api/model-families');
 }
 
 async function loadAdmin() {
@@ -457,30 +459,45 @@ function formatPrice(value) {
 
 function modelView() {
   const admin = state.me?.role === 'admin';
+  const familyTags = state.modelFamilies.map((family) => '<div class="family-item"><span class="family-tag">#' + family.id + ' ' + esc(family.title) + '</span>' +
+    (admin ? '<button data-edit-family="' + family.id + '" aria-label="Rename family ' + esc(family.title) + '">Edit</button>' +
+      '<button class="danger" data-delete-family="' + family.id + '" aria-label="Delete family ' + esc(family.title) + '">Delete</button>' : '') + '</div>').join('');
   const rows = state.models.map((item, index) => {
     const tiers = MODEL_TIERS.map((tier) => '<label class="tier-check"><input type="checkbox" disabled' +
       (item.tiers.includes(tier) ? ' checked' : '') + ' aria-label="' + tier + ' tier for ' + esc(item.model) + '"><span>' + tier + '</span></label>').join('');
+    const currentStatus = item.status || 'inactive';
+    const statusCell = admin ? '<label class="model-switch"><input type="checkbox" data-status-model="' + item.id + '" role="switch" aria-label="Activate ' + esc(item.model) + '"' +
+      (currentStatus === 'active' ? ' checked' : '') + '><span>' + currentStatus + '</span></label>' : '<span>' + currentStatus + '</span>';
     const actions = admin ? '<td class="actions model-actions">' +
       '<button data-move-model="' + item.id + '" data-direction="up" aria-label="Move ' + esc(item.model) + ' up"' + (index === 0 ? ' disabled' : '') + '>↑</button>' +
       '<button data-move-model="' + item.id + '" data-direction="down" aria-label="Move ' + esc(item.model) + ' down"' + (index === state.models.length - 1 ? ' disabled' : '') + '>↓</button>' +
-      '<button data-edit-model="' + item.id + '">Edit</button></td>' : '';
+      '<button data-edit-model="' + item.id + '">Edit</button><button class="danger" data-delete-model="' + item.id + '">Delete</button></td>' : '';
+    const family = (item.families || []).map((entry) => '<span class="family-tag">#' + entry.id + ' ' + esc(entry.title) + '</span>').join('');
     return '<tr><td class="model-index">' + (index + 1) + '</td><td><code class="model-id">' + esc(item.model) + '</code></td>' +
-      '<td><div class="tier-group">' + tiers + '</div></td><td class="model-price">' + formatPrice(item.inputPrice) + ' / ' + formatPrice(item.outputPrice) + '</td>' + actions + '</tr>';
+      '<td><div class="tier-group">' + tiers + '</div></td><td class="family-cell">' + (family || '—') + '</td><td>' + statusCell + '</td>' +
+      '<td class="model-price">' + formatPrice(item.inputPrice) + ' / ' + formatPrice(item.outputPrice) + '</td>' + actions + '</tr>';
   }).join('');
-  return '<div class="panel"><div class="panel-head"><div><h2>Model catalog</h2>' +
+  return '<div class="panel"><div class="panel-head"><div><h2>Model family</h2><p>Group models across families.</p></div>' +
+    (admin ? '<button class="primary" id="add-family">Add</button>' : '') + '</div><div class="family-list">' +
+    (familyTags || '<p class="field-hint">No families yet.</p>') + '</div></div>' +
+    '<div class="panel"><div class="panel-head"><div><h2>Model catalog</h2>' +
     '<p>Price per 1M input/output tokens. Reference only; this does not change gateway routing or billing.</p></div>' +
     (admin ? '<button class="primary" id="add-model">Add model</button>' : '') + '</div>' +
-    '<div class="table-wrap"><table class="model-table"><thead><tr><th>#</th><th>Model</th><th>Tier</th><th>Price input/output</th>' +
+    '<div class="table-wrap"><table class="model-table"><thead><tr><th>#</th><th>Model</th><th>Tier</th><th>Family</th><th>Status</th><th>Price input/output</th>' +
     (admin ? '<th><span class="sr-only">Actions</span></th>' : '') + '</tr></thead><tbody>' +
-    (rows || '<tr><td colspan="' + (admin ? 5 : 4) + '" class="empty">No models in catalog.</td></tr>') + '</tbody></table></div></div>';
+    (rows || '<tr><td colspan="' + (admin ? 7 : 6) + '" class="empty">No models in catalog.</td></tr>') + '</tbody></table></div></div>';
 }
 
 function editModelModal(modal) {
   const tiers = MODEL_TIERS.map((tier) => '<label class="tier-option"><input type="checkbox" name="tier" value="' + tier + '"' +
     (modal.tiers.includes(tier) ? ' checked' : '') + '>' + tier + '</label>').join('');
+  const families = state.modelFamilies.map((family) => '<label class="tier-option"><input type="checkbox" name="model-family" value="' + family.id + '"' +
+    ((modal.familyIds || []).includes(family.id) ? ' checked' : '') + '>' + esc(family.title) + '</label>').join('');
   return modalFrame(modal.id ? 'Edit model' : 'Add model',
     '<form id="model-form"><label for="model-id">Model<input id="model-id" maxlength="160" required autocomplete="off" spellcheck="false" placeholder="provider/model" value="' + esc(modal.model) + '"></label>' +
     '<fieldset class="tier-fieldset"><legend>Tier</legend><div class="tier-options">' + tiers + '</div><p class="field-hint">Select one or more tiers.</p></fieldset>' +
+    '<fieldset class="tier-fieldset"><legend>Model family</legend><div class="tier-options">' + (families || '<span class="field-hint">No families yet.</span>') + '</div></fieldset>' +
+    '<label class="model-switch"><input id="model-status" type="checkbox" role="switch"' + (modal.status === 'active' ? ' checked' : '') + '>Active</label>' +
     '<div class="price-fields"><label for="model-input-price">Input price ($/1M)<input id="model-input-price" type="number" min="0" step="any" inputmode="decimal" required value="' + esc(modal.inputPrice) + '"></label>' +
     '<label for="model-output-price">Output price ($/1M)<input id="model-output-price" type="number" min="0" step="any" inputmode="decimal" required value="' + esc(modal.outputPrice) + '"></label></div>' +
     (modal.error ? '<div class="notice error" role="alert">' + esc(modal.error) + '</div>' : '') + '</form>',
@@ -567,6 +584,30 @@ function resetPasswordModal(modal) {
   '<button id="close-modal">Cancel</button><button class="primary" id="confirm-reset">Reset password</button>');
 }
 
+function familyModal(modal) {
+  return modalFrame(modal.id ? 'Rename model family' : 'Add model family',
+    '<form id="family-form"><label for="family-title">Title<input id="family-title" maxlength="64" required autocomplete="off" spellcheck="false" ' +
+    'pattern="[a-z0-9_-]+" placeholder="code" aria-describedby="family-title-hint" value="' + esc(modal.title) + '"></label>' +
+    '<p class="field-hint" id="family-title-hint">Lowercase letters, digits, - or _; no spaces.</p>' +
+    (modal.error ? '<div class="notice error" role="alert">' + esc(modal.error) + '</div>' : '') + '</form>',
+  '<button id="close-modal" type="button">Cancel</button><button class="primary" id="save-family" type="submit" form="family-form">Save</button>');
+}
+
+function deleteModelModal(modal) {
+  return modalFrame('Delete model', '<p>Delete <code>' + esc(modal.model) + '</code> from the catalog?</p>' +
+    '<div class="notice bad">Its family links are removed too. This cannot be undone.</div>' +
+    (modal.error ? '<div class="notice error" role="alert">' + esc(modal.error) + '</div>' : ''),
+  '<button id="close-modal">Cancel</button><button class="danger" id="confirm-delete-model">Delete model</button>');
+}
+
+function deleteFamilyModal(modal) {
+  const usage = modal.modelCount ? 'It is removed from ' + modal.modelCount + ' model' + (modal.modelCount === 1 ? '' : 's') + ' first. ' : '';
+  return modalFrame('Delete model family', '<p>Delete family <strong>' + esc(modal.title) + '</strong>?</p>' +
+    '<div class="notice bad">' + usage + 'This cannot be undone.</div>' +
+    (modal.error ? '<div class="notice error" role="alert">' + esc(modal.error) + '</div>' : ''),
+  '<button id="close-modal">Cancel</button><button class="danger" id="confirm-delete-family">Delete family</button>');
+}
+
 function removeUserModal(modal) {
   return modalFrame('Remove user', '<p>Remove <strong>' + esc(modal.username) + '</strong>?</p>' +
     '<div class="notice bad">Their provider accounts are removed from the routers first. This cannot be undone.</div>' +
@@ -600,6 +641,9 @@ function modalView() {
   if (state.modal.type === 'remove-user') return removeUserModal(state.modal);
   if (state.modal.type === 'edit-account') return editAccountModal(state.modal);
   if (state.modal.type === 'model') return editModelModal(state.modal);
+  if (state.modal.type === 'family') return familyModal(state.modal);
+  if (state.modal.type === 'delete-model') return deleteModelModal(state.modal);
+  if (state.modal.type === 'delete-family') return deleteFamilyModal(state.modal);
   return '';
 }
 
@@ -755,6 +799,24 @@ function bind() {
     if (moved && !moved.disabled) moved.focus();
   }); });
   if ($('model-form')) $('model-form').onsubmit = (event) => { event.preventDefault(); saveModel(); };
+  document.querySelectorAll('[data-status-model]').forEach((element) => { element.onchange = () => setModelStatus(element); });
+  document.querySelectorAll('[data-delete-model]').forEach((element) => { element.onclick = () => {
+    const item = state.models.find((model) => String(model.id) === element.dataset.deleteModel);
+    state.modal = { type: 'delete-model', id: item.id, model: item.model, error: null };
+    render();
+  }; });
+  if ($('add-family')) $('add-family').onclick = () => openFamilyModal();
+  document.querySelectorAll('[data-edit-family]').forEach((element) => {
+    element.onclick = () => openFamilyModal(state.modelFamilies.find((family) => String(family.id) === element.dataset.editFamily));
+  });
+  document.querySelectorAll('[data-delete-family]').forEach((element) => { element.onclick = () => {
+    const family = state.modelFamilies.find((entry) => String(entry.id) === element.dataset.deleteFamily);
+    state.modal = { type: 'delete-family', id: family.id, title: family.title, modelCount: family.modelCount, error: null };
+    render();
+  }; });
+  if ($('family-form')) $('family-form').onsubmit = (event) => { event.preventDefault(); saveFamily(); };
+  if ($('confirm-delete-model')) $('confirm-delete-model').onclick = deleteModel;
+  if ($('confirm-delete-family')) $('confirm-delete-family').onclick = deleteFamily;
   if ($('audit-prev')) $('audit-prev').onclick = async () => { await loadAudit(state.audit.page - 1); render(); };
   if ($('audit-next')) $('audit-next').onclick = async () => { await loadAudit(state.audit.page + 1); render(); };
   if ($('create-user-form')) $('create-user-form').onsubmit = (event) => { event.preventDefault(); createUser(); };
@@ -774,21 +836,26 @@ function bind() {
 
 function openModelModal(item = null) {
   state.modal = item
-    ? { type: 'model', id: item.id, model: item.model, tiers: [...item.tiers], inputPrice: item.inputPrice, outputPrice: item.outputPrice, error: null }
-    : { type: 'model', id: null, model: '', tiers: [], inputPrice: '', outputPrice: '', error: null };
+    ? { type: 'model', id: item.id, model: item.model, tiers: [...item.tiers], familyIds: (item.families || []).map((family) => family.id),
+      status: item.status || 'inactive', inputPrice: item.inputPrice, outputPrice: item.outputPrice, error: null }
+    : { type: 'model', id: null, model: '', tiers: [], familyIds: [], status: 'inactive', inputPrice: '', outputPrice: '', error: null };
   render();
   if ($('model-id')) $('model-id').focus();
 }
 
 async function saveModel() {
   const tiers = [...document.querySelectorAll('input[name="tier"]:checked')].map((input) => input.value);
+  const familyIds = [...document.querySelectorAll('input[name="model-family"]:checked')].map((input) => Number(input.value)).filter(Number.isSafeInteger);
+  const status = $('model-status')?.checked ? 'active' : 'inactive';
   const payload = {
     model: $('model-id').value.trim(),
     tiers,
+    familyIds,
+    status,
     inputPrice: Number($('model-input-price').value),
     outputPrice: Number($('model-output-price').value),
   };
-  Object.assign(state.modal, { model: $('model-id').value, tiers, inputPrice: $('model-input-price').value, outputPrice: $('model-output-price').value });
+  Object.assign(state.modal, { model: $('model-id').value, tiers, familyIds, status, inputPrice: $('model-input-price').value, outputPrice: $('model-output-price').value });
   const invalid = !payload.model ? 'Model is required.'
     : !tiers.length ? 'Select at least one tier.'
       : $('model-input-price').value === '' || $('model-output-price').value === '' || payload.inputPrice < 0 || payload.outputPrice < 0 ? 'Enter non-negative input and output prices.' : null;
@@ -815,6 +882,88 @@ async function saveModel() {
     notify(editing ? 'Model updated.' : 'Model added.', 'ok');
   } catch (error) {
     notify('Model saved, but the catalog could not reload: ' + error.message);
+  }
+}
+
+function openFamilyModal(item = null) {
+  state.modal = { type: 'family', id: item?.id || null, title: item?.title || '', error: null };
+  render();
+  $('family-title')?.focus();
+}
+
+async function saveFamily() {
+  const title = $('family-title').value.trim();
+  state.modal.title = title;
+  if (!/^[a-z0-9_-]{1,64}$/.test(title)) {
+    state.modal.error = 'Use 1–64 lowercase letters, digits, hyphens or underscores.';
+    render();
+    return;
+  }
+  const id = state.modal.id;
+  const button = $('save-family');
+  button.disabled = true;
+  try {
+    await api(id ? '/api/model-families/' + id : '/api/model-families', {
+      method: id ? 'PATCH' : 'POST', body: JSON.stringify({ title }),
+    });
+    state.modal = null;
+    await loadModels();
+    render();
+    notify(id ? 'Family renamed.' : 'Family added.', 'ok');
+  } catch (error) {
+    if (state.modal) { state.modal.error = error.message; render(); }
+    else notify('Family saved, but the catalog could not reload: ' + error.message);
+  }
+}
+
+async function deleteFamily() {
+  const id = state.modal.id;
+  const button = $('confirm-delete-family');
+  button.disabled = true;
+  try {
+    const result = await api('/api/model-families/' + id, { method: 'DELETE' });
+    state.modal = null;
+    await loadModels();
+    render();
+    notify('Family deleted; unlinked from ' + result.unlinkedModels + ' model' + (result.unlinkedModels === 1 ? '' : 's') + '.', 'ok');
+  } catch (error) {
+    if (state.modal) { state.modal.error = error.message; render(); }
+    else notify('Family deleted, but the catalog could not reload: ' + error.message);
+  }
+}
+
+async function deleteModel() {
+  const id = state.modal.id;
+  const button = $('confirm-delete-model');
+  button.disabled = true;
+  try {
+    await api('/api/models/' + id, { method: 'DELETE' });
+    state.modal = null;
+    await loadModels();
+    render();
+    notify('Model deleted.', 'ok');
+  } catch (error) {
+    if (state.modal) { state.modal.error = error.message; render(); }
+    else notify('Model deleted, but the catalog could not reload: ' + error.message);
+  }
+}
+
+async function setModelStatus(element) {
+  const next = element.checked ? 'active' : 'inactive';
+  element.disabled = true;
+  try {
+    const updated = await api('/api/models/' + element.dataset.statusModel + '/status', {
+      method: 'PATCH', body: JSON.stringify({ status: next }),
+    });
+    const index = state.models.findIndex((model) => String(model.id) === element.dataset.statusModel);
+    if (index !== -1) state.models[index] = updated;
+    notify('Model ' + next + '.', 'ok');
+    // Re-rendering replaces the switch; keep keyboard focus on the same row.
+    document.querySelector('[data-status-model="' + updated.id + '"]')?.focus();
+  } catch (error) {
+    element.checked = !element.checked;
+    element.disabled = false;
+    notify(error.message);
   }
 }
 

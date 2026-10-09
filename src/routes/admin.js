@@ -33,6 +33,11 @@ const ACTION_LABELS = {
   'admin.create_model': 'model added',
   'admin.update_model': 'model updated',
   'admin.move_model': 'model moved',
+  'admin.set_model_status': 'model status changed',
+  'admin.delete_model': 'model deleted',
+  'admin.create_model_family': 'model family added',
+  'admin.update_model_family': 'model family renamed',
+  'admin.delete_model_family': 'model family deleted',
   'user.login': 'user login',
   'user.login_failed': 'user login failed',
   'admin.login': 'admin login',
@@ -262,7 +267,14 @@ export default async function adminRoutes(app, { db, adapters, config }) {
         CASE
           WHEN l.target_type = 'user' THEN target_user.username
           WHEN l.target_type = 'account' THEN target_account.display_name
-          WHEN l.target_type = 'model' THEN target_model.model
+          -- Deleted catalog rows are named from their delete entry's snapshot,
+          -- so every earlier entry for the same target stays readable too.
+          WHEN l.target_type = 'model' THEN COALESCE(target_model.model, (
+            SELECT json_extract(d.detail, '$.before.model') FROM audit_log d
+            WHERE d.action = 'admin.delete_model' AND d.target_id = l.target_id AND json_valid(d.detail)))
+          WHEN l.target_type = 'model_family' THEN COALESCE(target_family.title, (
+            SELECT json_extract(d.detail, '$.before.title') FROM audit_log d
+            WHERE d.action = 'admin.delete_model_family' AND d.target_id = l.target_id AND json_valid(d.detail)))
           ELSE NULL
         END AS resolved_target
       FROM audit_log l
@@ -273,6 +285,8 @@ export default async function adminRoutes(app, { db, adapters, config }) {
         ON l.target_type = 'account' AND target_account.id = CAST(l.target_id AS INTEGER)
       LEFT JOIN model_catalog target_model
         ON l.target_type = 'model' AND target_model.id = CAST(l.target_id AS INTEGER)
+      LEFT JOIN model_families target_family
+        ON l.target_type = 'model_family' AND target_family.id = CAST(l.target_id AS INTEGER)
       ORDER BY l.id DESC LIMIT ? OFFSET ?
     `).all(pageSize, (page - 1) * pageSize).map((entry) => ({
       id: entry.id,

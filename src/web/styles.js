@@ -125,14 +125,38 @@ tr:hover td{background:var(--bg-alt)}
 .badge.failed,.badge.needs_reauth,.badge.disabled,.badge.revoked{background:rgba(207,34,46,.12);color:var(--danger-text)}
 .empty,.quota-placeholder{padding:42px;text-align:center;color:var(--muted)}
 
-.model-table{min-width:760px}
+.model-table{min-width:1040px}
 .model-index{width:48px;color:var(--muted);font-variant-numeric:tabular-nums}
 .model-id{font-size:12px;overflow-wrap:anywhere}
 .tier-group{display:flex;gap:6px;flex-wrap:wrap}
 .tier-check,.tier-option{display:inline-flex;align-items:center;gap:6px;margin:0;color:var(--text);font-size:12px;font-weight:600}
 .tier-check{min-height:28px;padding:3px 9px;border:1px solid var(--border);border-radius:999px;background:var(--surface)}
-.tier-check input,.tier-option input{width:16px;height:16px;margin:0;accent-color:var(--brand)}
+.tier-check input,.tier-option input{width:16px;height:16px;margin:0;padding:0;accent-color:var(--brand)}
 .tier-check input:checked+span{color:var(--brand)}
+/* Light theme: white checkboxes with a brand tick instead of the filled native
+   control. The dark theme keeps the native accent-colour checkbox. */
+:root:not([data-theme="dark"]) .tier-check input,:root:not([data-theme="dark"]) .tier-option input{appearance:none;position:relative;flex:0 0 16px;background:#fff;border:1.5px solid var(--border-strong);border-radius:4px;cursor:pointer}
+:root:not([data-theme="dark"]) .tier-check input:disabled,:root:not([data-theme="dark"]) .tier-option input:disabled{cursor:default;opacity:1}
+:root:not([data-theme="dark"]) .tier-check input:checked,:root:not([data-theme="dark"]) .tier-option input:checked{border-color:var(--brand)}
+:root:not([data-theme="dark"]) .tier-check input:checked::after,:root:not([data-theme="dark"]) .tier-option input:checked::after{content:"";position:absolute;left:4px;top:1px;width:4px;height:8px;border:solid var(--brand);border-width:0 2px 2px 0;transform:rotate(45deg)}
+:root:not([data-theme="dark"]) .tier-check input:focus-visible,:root:not([data-theme="dark"]) .tier-option input:focus-visible{outline:0;box-shadow:0 0 0 3px var(--brand-soft)}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]) .tier-check input,:root:not([data-theme="light"]) .tier-option input{appearance:auto;background:none;border:0;border-radius:0}
+  :root:not([data-theme="light"]) .tier-check input::after,:root:not([data-theme="light"]) .tier-option input::after{content:none}
+}
+.family-list{display:flex;flex-wrap:wrap;gap:8px 14px;padding:14px 20px 18px}
+.family-item{display:inline-flex;align-items:center;gap:4px}
+.family-item button{min-height:44px;padding:6px 10px}
+.family-tag{display:inline-flex;align-items:center;min-height:28px;padding:3px 10px;border:1px solid var(--brand);border-radius:999px;background:var(--brand-soft);color:var(--text);font-size:12px;font-weight:600;white-space:nowrap}
+.family-cell{white-space:nowrap}
+.family-cell .family-tag{margin:2px 4px 2px 0}
+.model-switch{display:inline-flex;align-items:center;gap:8px;min-height:44px;margin:0;font-size:12px;font-weight:600;color:var(--text);cursor:pointer}
+.model-switch input{appearance:none;width:42px;height:24px;margin:0;padding:0;border:1px solid var(--border-strong);border-radius:999px;background:var(--surface-2);position:relative;flex:0 0 42px;cursor:pointer;transition:background .18s ease,border-color .18s ease}
+.model-switch input::after{content:"";position:absolute;width:18px;height:18px;left:2px;top:2px;border-radius:50%;background:var(--surface);box-shadow:0 1px 3px rgba(0,0,0,.28);transition:transform .18s ease}
+.model-switch input:checked{background:var(--brand);border-color:var(--brand)}
+.model-switch input:checked::after{transform:translateX(18px)}
+.model-switch input:focus-visible{outline:0;box-shadow:0 0 0 3px var(--brand-soft)}
+.model-switch input:disabled{opacity:.6;cursor:progress}
 .model-price{white-space:nowrap;font-variant-numeric:tabular-nums}
 .model-actions{justify-content:flex-end;flex-wrap:nowrap}
 .model-actions button{min-width:44px;min-height:44px}
