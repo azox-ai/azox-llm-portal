@@ -147,6 +147,9 @@ tr:hover td{background:var(--bg-alt)}
 .family-tag{display:inline-flex;align-items:center;min-height:28px;padding:3px 10px;border:1px solid var(--brand);border-radius:999px;background:var(--brand-soft);color:var(--text);font-size:12px;font-weight:600;white-space:nowrap}
 .family-cell{white-space:nowrap}
 .family-cell .family-tag{margin:2px 4px 2px 0}
+/* At most three tier badges per line; extra tiers wrap to the next line so the
+   Tier column cannot squeeze the Model column. */
+.tier-badges{display:grid;grid-template-columns:repeat(3,max-content);gap:4px;align-items:center}
 .model-switch{display:inline-flex;align-items:center;gap:8px;min-height:44px;margin:0;font-size:12px;font-weight:600;color:var(--text);cursor:pointer}
 .model-switch input{appearance:none;width:42px;height:24px;margin:0;padding:0;border:1px solid var(--border-strong);border-radius:999px;background:var(--surface-2);position:relative;flex:0 0 42px;cursor:pointer;transition:background .18s ease,border-color .18s ease}
 .model-switch input::after{content:"";position:absolute;width:18px;height:18px;left:2px;top:2px;border-radius:50%;background:var(--surface);box-shadow:0 1px 3px rgba(0,0,0,.28);transition:transform .18s ease}

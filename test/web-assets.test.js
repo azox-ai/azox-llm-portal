@@ -404,6 +404,21 @@ test('saved model stays saved when the catalog reload fails', async () => {
   assert.match(state.toast.text, /saved.*catalog unavailable/i);
 });
 
+test('Model tier cell lays out at most three badges per row without affecting family tags', () => {
+  const initStart = appScript.indexOf('(async function init()');
+  const context = vm.createContext({});
+  new vm.Script(appScript.slice(0, initStart) + ';globalThis.modelsTest = { state, modelView };')
+    .runInContext(context);
+  const { state, modelView } = context.modelsTest;
+  state.me = { role: 'user' };
+  state.models = [{ id: 1, model: 'example', tiers: Array.from({ length: 6 }, (_, index) => ({ id: index + 1, title: 'tier-' + index })),
+    families: [{ id: 7, title: 'family' }], inputPrice: 1, outputPrice: 2 }];
+  const view = modelView();
+  assert.match(view, /<td class="tier-cell"><div class="tier-badges">(?:<span class="family-tag">[^<]+<\/span>){6}<\/div><\/td>/);
+  assert.match(view, /<td class="family-cell"><span class="family-tag">#7 family<\/span><\/td>/);
+  assert.match(styles, /\.tier-badges\{[^}]*display:grid;[^}]*grid-template-columns:repeat\(3,max-content\)/);
+});
+
 test('Model tab shows tier and family tags with admin-only editing controls', () => {
   const initStart = appScript.indexOf('(async function init()');
   const context = vm.createContext({});
@@ -425,10 +440,10 @@ test('Model tab shows tier and family tags with admin-only editing controls', ()
   // Tiers are an admin-managed catalog shown exactly like families.
   assert.ok(userView.indexOf('Model tier') < userView.indexOf('Model catalog'));
   assert.match(userView, /class="family-tag"[^>]*>#1 model-ultra<\/span>/);
-  assert.match(userView, /<td class="family-cell"><span class="family-tag">#2 model-max<\/span><span class="family-tag">#3 model-high<\/span><\/td>/);
+  assert.match(userView, /<td class="tier-cell"><div class="tier-badges"><span class="family-tag">#2 model-max<\/span><span class="family-tag">#3 model-high<\/span><\/div><\/td>/);
   assert.doesNotMatch(userView, /type="checkbox"[^>]*disabled|data-edit-tier|data-delete-tier|id="add-tier"/);
   state.models = [{ ...state.models[0], tiers: [] }];
-  assert.match(modelView(), /<td class="family-cell">—<\/td><td class="family-cell">#2|<td class="family-cell">—<\/td>/);
+  assert.match(modelView(), /<td class="tier-cell">—<\/td>/);
   state.models = [{ id: 1, model: '<bad>', tiers: [{ id: 2, title: 'model-max' }], inputPrice: 2, outputPrice: 10, position: 1, status: 'inactive', families: [{ id: 2, title: 'code' }] }];
   state.me = { role: 'admin' };
   const adminView = modelView();
