@@ -510,7 +510,7 @@ function modelView() {
       '<button data-edit-model="' + item.id + '">Edit</button><button class="danger" data-delete-model="' + item.id + '">Delete</button></td>' : '';
     const family = (item.families || []).map(tagLabel).join('');
     return '<tr><td class="model-index">' + (index + 1) + '</td><td><code class="model-id">' + esc(item.model) + '</code></td>' +
-      '<td class="family-cell">' + (tiers || '—') + '</td><td class="family-cell">' + (family || '—') + '</td><td>' + statusCell + '</td>' +
+      '<td class="tier-cell">' + (tiers ? '<div class="tier-badges">' + tiers + '</div>' : '—') + '</td><td class="family-cell">' + (family || '—') + '</td><td>' + statusCell + '</td>' +
       '<td class="model-price">' + formatPrice(item.inputPrice) + ' / ' + formatPrice(item.outputPrice) + '</td>' + actions + '</tr>';
   }).join('');
   return tagPanel('tier', admin) + tagPanel('family', admin) +
