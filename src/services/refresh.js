@@ -5,6 +5,19 @@ import { getRefreshLeadMs } from './settings.js';
 
 export const MIN_REFRESH_GAP_MS = 10 * 60_000;
 
+function refreshLeadMs(account, configuredLeadMs) {
+  const expires = Date.parse(account.access_expires_at);
+  const refreshedAt = account.last_refresh_at;
+  const normalized = /^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d$/.test(refreshedAt || '')
+    ? refreshedAt.replace(' ', 'T') + 'Z' : refreshedAt;
+  const lastRefresh = Date.parse(normalized || '');
+  const lifetime = expires - lastRefresh;
+  // A lead equal to the whole token lifetime makes every new token eligible
+  // again immediately. Never refresh before half its measured lifetime.
+  return Number.isFinite(lifetime) && lifetime > 0
+    ? Math.min(configuredLeadMs, lifetime / 2) : configuredLeadMs;
+}
+
 function refreshRequest(provider, providerConfig, refreshToken) {
   const values = {
     grant_type: 'refresh_token',
@@ -70,20 +83,23 @@ export async function refreshAccount(db, adapters, config, accountId, fetchImpl 
 
 export async function runRefreshTick(db, adapters, config, fetchImpl = fetch, now = Date.now()) {
   // Read the setting on every tick so admin changes apply without a restart.
-  const cutoff = new Date(now + getRefreshLeadMs(db, config)).toISOString();
+  const configuredLeadMs = getRefreshLeadMs(db, config);
+  const cutoff = new Date(now + configuredLeadMs).toISOString();
   const lastEligibleRefresh = new Date(now - MIN_REFRESH_GAP_MS).toISOString();
   const accounts = db.prepare(`
-    SELECT id FROM provider_accounts
+    SELECT id, access_expires_at, last_refresh_at FROM provider_accounts
     WHERE credential_status = 'active'
       AND access_expires_at IS NOT NULL
       AND access_expires_at <= ?
       AND (last_refresh_at IS NULL OR datetime(last_refresh_at) <= datetime(?))
   `).all(cutoff, lastEligibleRefresh);
-  for (const account of accounts) {
+  const due = accounts.filter((account) => Date.parse(account.access_expires_at)
+    <= now + refreshLeadMs(account, configuredLeadMs));
+  for (const account of due) {
     try { await refreshAccount(db, adapters, config, account.id, fetchImpl); }
     catch { /* recorded on the account; one failure must not block the others */ }
   }
-  return accounts.length;
+  return due.length;
 }
 
 export function startRefreshScheduler(db, adapters, config, fetchImpl = fetch) {

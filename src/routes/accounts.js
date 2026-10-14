@@ -66,6 +66,7 @@ export default async function accountRoutes(app, { db, config, adapters, oauthFe
         db.prepare(`
           UPDATE provider_accounts SET display_name = ?, credential_envelope = ?, credential_status = 'active',
             desired_enabled = 1, quota_auto_disabled = 0, quota_session_reset_at = NULL,
+            quota_reset_window = NULL,
             token_version = token_version + 1, access_expires_at = ?,
             last_refresh_at = CURRENT_TIMESTAMP, last_refresh_error = NULL,
             updated_at = CURRENT_TIMESTAMP WHERE id = ?
@@ -212,6 +213,7 @@ export default async function accountRoutes(app, { db, config, adapters, oauthFe
     db.prepare(`
       UPDATE provider_accounts
       SET desired_enabled = ?, quota_auto_disabled = 0, quota_session_reset_at = NULL,
+          quota_reset_window = NULL,
           token_version = token_version + 1, updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `)
@@ -265,7 +267,7 @@ export default async function accountRoutes(app, { db, config, adapters, oauthFe
     if (!request.user) return reply.code(401).send({ error: 'Not authenticated' });
     const account = accountForUser(db, request.params.id, request.user);
     if (!account) return reply.code(404).send({ error: 'Account not found' });
-    return reply.send({ ok: true, routers: await pullRouterState(db, adapters, account.id) });
+    return reply.send({ ok: true, routers: await pullRouterState(db, adapters, account.id, config) });
   });
 
   // The browser quota endpoint remains read-only. State transitions based on
@@ -283,6 +285,9 @@ export default async function accountRoutes(app, { db, config, adapters, oauthFe
       );
     } catch (error) {
       request.log.warn({ err: error, accountId: account.id }, 'Quota fetch failed');
+      if (error.statusCode === 429) {
+        return reply.code(429).send({ error: 'Provider quota rate limited (HTTP 429). Retrying automatically.' });
+      }
       return reply.code(502).send({ error: 'Quota upstream unavailable' });
     }
   });

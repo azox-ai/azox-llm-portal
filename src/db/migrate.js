@@ -36,6 +36,37 @@ export function migrate(db) {
     addColumn(db, 'provider_accounts', 'last_refresh_error', 'TEXT');
     addColumn(db, 'provider_accounts', 'quota_auto_disabled', 'INTEGER NOT NULL DEFAULT 0 CHECK (quota_auto_disabled IN (0, 1))');
     addColumn(db, 'provider_accounts', 'quota_session_reset_at', 'TEXT');
+    addColumn(db, 'provider_accounts', 'quota_reset_window', 'TEXT');
+    // Recover the tracked window for existing pauses only when the audit reset
+    // still matches the saved reset. Otherwise keep the conservative fallback.
+    if (tableExists(db, 'audit_log')) {
+      const paused = db.prepare(`
+        SELECT id, quota_session_reset_at FROM provider_accounts
+        WHERE quota_auto_disabled = 1 AND quota_reset_window IS NULL
+          AND quota_session_reset_at IS NOT NULL
+      `).all();
+      const lastPause = db.prepare(`
+        SELECT detail FROM audit_log
+        WHERE target_type = 'account' AND target_id = ?
+          AND action = 'account.auto_disabled_quota'
+        ORDER BY id DESC LIMIT 1
+      `);
+      const update = db.prepare(`
+        UPDATE provider_accounts SET quota_reset_window = ?
+        WHERE id = ? AND quota_reset_window IS NULL
+      `);
+      for (const account of paused) {
+        try {
+          const detail = JSON.parse(lastPause.get(String(account.id))?.detail || 'null');
+          if (detail?.resetAt === account.quota_session_reset_at
+            && ['session', 'weekly'].includes(detail.window)) {
+            update.run(detail.window, account.id);
+          }
+        } catch {
+          // An invalid legacy audit entry cannot identify the paused window.
+        }
+      }
+    }
   }
 
   if (tableExists(db, 'oauth_states')) {

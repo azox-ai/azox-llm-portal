@@ -34,15 +34,24 @@ function codexWindow(window) {
   const rawUsed = window.used_percent ?? window.percent_used;
   const parsedUsed = rawUsed === undefined || rawUsed === null || rawUsed === '' ? NaN : Number(rawUsed);
   const used = Number.isFinite(parsedUsed) ? parsedUsed : null;
+  const seconds = window.reset_after_seconds;
   const resetAt = resetIso(window.reset_at ?? window.resets_at)
-    ?? (Number.isFinite(Number(window.reset_after_seconds))
-      ? new Date(Date.now() + Number(window.reset_after_seconds) * 1000).toISOString()
+    ?? (seconds !== null && seconds !== undefined && seconds !== ''
+      && Number.isFinite(Number(seconds)) && Number(seconds) >= 0
+      ? new Date(Date.now() + Number(seconds) * 1000).toISOString()
       : null);
   return {
     used,
     remaining: used === null ? null : Math.max(0, 100 - used),
     resetAt,
   };
+}
+
+function requireQuotaResponse(response) {
+  if (response.ok) return;
+  const error = new Error(`Quota upstream returned ${response.status}`);
+  error.statusCode = response.status;
+  throw error;
 }
 
 export async function fetchQuota(provider, tokenSet, fetchImpl = fetch) {
@@ -54,7 +63,7 @@ export async function fetchQuota(provider, tokenSet, fetchImpl = fetch) {
         'anthropic-version': '2023-06-01',
       },
     });
-    if (!response.ok) throw new Error(`Quota upstream returned ${response.status}`);
+    requireQuotaResponse(response);
     const data = await response.json();
     const quotas = {};
     const session = quotaWindow(data.five_hour);
@@ -67,7 +76,7 @@ export async function fetchQuota(provider, tokenSet, fetchImpl = fetch) {
   const response = await fetchImpl(CODEX_USAGE_URL, {
     headers: { authorization: `Bearer ${tokenSet.accessToken}`, accept: 'application/json' },
   });
-  if (!response.ok) throw new Error(`Quota upstream returned ${response.status}`);
+  requireQuotaResponse(response);
   const data = await response.json();
   const rate = data.rate_limit || data.rate_limits || {};
   const quotas = {};

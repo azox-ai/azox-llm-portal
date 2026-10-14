@@ -62,6 +62,7 @@ CREATE TABLE IF NOT EXISTS provider_accounts (
   last_refresh_error TEXT,
   quota_auto_disabled INTEGER NOT NULL DEFAULT 0 CHECK (quota_auto_disabled IN (0, 1)),
   quota_session_reset_at TEXT,
+  quota_reset_window TEXT,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   UNIQUE(provider, upstream_subject)
@@ -93,6 +94,7 @@ CREATE TABLE IF NOT EXISTS audit_log (
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) STRICT;
 CREATE INDEX IF NOT EXISTS audit_created_at ON audit_log(created_at);
+CREATE INDEX IF NOT EXISTS audit_account_action ON audit_log(target_type, target_id, action, id);
 
 CREATE TABLE IF NOT EXISTS app_settings (
   key TEXT PRIMARY KEY,
