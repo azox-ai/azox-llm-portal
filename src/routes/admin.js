@@ -22,6 +22,8 @@ const ACTION_LABELS = {
   'account.disabled': 'account disabled',
   'account.renamed': 'account renamed',
   'account.auto_enabled_quota': 'account auto-enabled after quota reset',
+  'account.quota_resume_sync_failed': 'quota recovery waiting for router sync',
+  'account.quota_pause_sync_failed': 'quota pause waiting for router sync',
   'account.auto_disabled_quota': 'account auto-disabled by quota',
   'account.removed': 'account removed',
   'account.remove_failed': 'account removal failed',
