@@ -214,6 +214,10 @@ test('missing or failed quota is never reported as ready or fully recovered', ()
   quota.state.quotas[1] = { error: 'Quota unavailable. Retrying within 5 min.', quotas: {} };
   assert.equal(quota.accountAvailability(account).label, 'Quota unavailable');
   assert.doesNotMatch(quota.connectionCard(account), /Upstream returned no quota window/);
+  quota.state.quotas[1] = { error: 'Provider quota rate limited (HTTP 429). Retrying automatically.', quotas: {} };
+  const rateLimited = quota.connectionCard(account);
+  assert.match(rateLimited, /HTTP 429/);
+  assert.doesNotMatch(rateLimited, /Quota check failed/);
   quota.state.quotas[1] = { quotas: { weekly: { remaining: null } } };
   assert.equal(quota.accountAvailability(account).label, 'Quota unknown');
   assert.equal(quota.quotaPercent(null), '\u2014');

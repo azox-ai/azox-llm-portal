@@ -45,6 +45,7 @@ test('migration adds the Re-auth target to an existing OAuth state table', () =>
       .map((column) => column.name);
     assert.ok(accountColumns.includes('quota_auto_disabled'));
     assert.ok(accountColumns.includes('quota_session_reset_at'));
+    assert.ok(accountColumns.includes('quota_reset_window'));
     const foreignKey = db.prepare('PRAGMA foreign_key_list(oauth_states)').all()
       .find((key) => key.from === 'account_id');
     assert.equal(foreignKey.table, 'provider_accounts');
@@ -478,6 +479,33 @@ test('refresh tick honors the configured lead boundary and live admin setting', 
   assert.equal(db.prepare('SELECT token_version FROM provider_accounts WHERE id = ?').get(atTenHours).token_version, 2);
 });
 
+test('refresh lead never immediately re-queues a newly refreshed eight-hour token', async (t) => {
+  const now = Date.parse('2030-01-01T00:00:00Z');
+  const { app, db, config, adapters } = await testApp({ config: { refreshLeadMinutes: 480 } });
+  t.after(() => { app.close(); db.close(); });
+  const ownerId = await seedUser(db, 'refresh-lifetime-owner');
+  const accountId = Number(db.prepare(`
+    INSERT INTO provider_accounts
+      (owner_id, provider, upstream_subject, display_name, credential_envelope,
+       access_expires_at, last_refresh_at)
+    VALUES (?, 'claude', 'eight-hour-token', 'Eight-hour token', ?, ?, ?)
+  `).run(ownerId, encryptJson({ accessToken: 'old', refreshToken: 'refresh' }, config.encryptionKey),
+    new Date(now + 8 * 60 * 60_000).toISOString(),
+    '2030-01-01 00:00:00').lastInsertRowid);
+  let calls = 0;
+  const fetchImpl = async () => {
+    calls += 1;
+    return new Response(JSON.stringify({ access_token: 'new', expires_in: 3600 }), { status: 200 });
+  };
+  assert.equal(await runRefreshTick(db, adapters, config, fetchImpl, now + 11 * 60_000), 0);
+  assert.equal(await runRefreshTick(db, adapters, config, fetchImpl,
+    now + 3 * 60 * 60_000 + 59 * 60_000), 0);
+  assert.equal(await runRefreshTick(db, adapters, config, fetchImpl, now + 4 * 60 * 60_000), 1);
+  assert.equal(calls, 1);
+  assert.equal(db.prepare('SELECT token_version FROM provider_accounts WHERE id = ?')
+    .get(accountId).token_version, 2);
+});
+
 test('Codex quota converts epoch-second reset_at instead of rendering 1970', async () => {
   const quota = await fetchQuota('codex', { accessToken: 'token' }, async () => new Response(JSON.stringify({
     plan_type: 'plus',
@@ -499,6 +527,13 @@ test('Codex quota preserves unknown usage instead of reporting 100% remaining', 
   assert.equal(quota.quotas.weekly.remaining, null);
 });
 
+test('Codex does not treat a missing reset interval as an immediate reset', async () => {
+  const quota = await fetchQuota('codex', { accessToken: 'token' }, async () => new Response(JSON.stringify({
+    rate_limit: { primary_window: { used_percent: 10, reset_after_seconds: null } },
+  }), { status: 200 }));
+  assert.equal(quota.quotas.session.resetAt, null);
+});
+
 test('Claude quota treats utilization as percent used and returns remaining percent', async () => {
   const quota = await fetchQuota('claude', { accessToken: 'token' }, async () => new Response(JSON.stringify({
     plan_type: 'max',
@@ -516,6 +551,22 @@ test('Claude quota treats utilization as percent used and returns remaining perc
     remaining: 72.5,
     resetAt: '2026-09-20T00:00:00.000Z',
   });
+});
+
+test('quota upstream errors retain HTTP status without logging credentials', async (t) => {
+  const { app, db, config, adapters } = await testApp();
+  t.after(() => { app.close(); db.close(); });
+  const ownerId = await seedUser(db, 'quota-upstream-logs');
+  const accountId = Number(db.prepare(`
+    INSERT INTO provider_accounts (owner_id, provider, upstream_subject, display_name, credential_envelope)
+    VALUES (?, 'claude', 'quota-upstream-logs', 'Quota logs', ?)
+  `).run(ownerId, encryptJson({ accessToken: 'private-access-token' }, config.encryptionKey)).lastInsertRowid);
+  const warnings = [];
+  const result = await runQuotaAutomationTick(db, adapters, config,
+    { claude: async () => new Response('', { status: 503 }) }, Date.now(),
+    { warn: (fields) => warnings.push(fields) });
+  assert.deepEqual(result, { checked: 0, disabled: 0, enabled: 0, failed: 1 });
+  assert.deepEqual(warnings, [{ accountId, provider: 'claude', error: 'HTTP 503' }]);
 });
 
 test('session quota automation disables at the threshold and enables after reset', async (t) => {
@@ -579,6 +630,279 @@ test('session quota automation disables at the threshold and enables after reset
       { action: 'account.auto_enabled_quota' },
     ],
   );
+});
+
+test('Codex resumes when the paused session rolls forward while weekly quota stays available', async (t) => {
+  const now = Date.parse('2030-01-01T00:00:00Z');
+  const pausedReset = new Date(now + 4 * 60 * 60_000).toISOString();
+  const weeklyReset = new Date(now + 7 * 24 * 60 * 60_000).toISOString();
+  const { app, db, config, adapters } = await testApp();
+  t.after(() => { app.close(); db.close(); });
+  const ownerId = await seedUser(db, 'codex-early-reset-owner');
+  const accountId = Number(db.prepare(`
+    INSERT INTO provider_accounts
+      (owner_id, provider, upstream_subject, display_name, credential_envelope)
+    VALUES (?, 'codex', 'codex-early-reset', 'Codex early reset', ?)
+  `).run(ownerId, encryptJson({ accessToken: 'codex-access' }, config.encryptionKey)).lastInsertRowid);
+  let sessionUsed = 84;
+  let sessionReset = pausedReset;
+  let currentWeeklyReset = weeklyReset;
+  const quotaFetch = { codex: async () => new Response(JSON.stringify({ rate_limit: {
+    primary_window: { used_percent: sessionUsed, reset_at: Math.round(Date.parse(sessionReset) / 1000) },
+    secondary_window: { used_percent: 2, reset_at: Math.round(Date.parse(currentWeeklyReset) / 1000) },
+  } }), { status: 200 }) };
+
+  assert.equal((await runQuotaAutomationTick(db, adapters, config, quotaFetch, now)).disabled, 1);
+  assert.deepEqual({ ...db.prepare(`
+    SELECT quota_session_reset_at, quota_reset_window FROM provider_accounts WHERE id = ?
+  `).get(accountId) }, { quota_session_reset_at: pausedReset, quota_reset_window: 'session' });
+
+  sessionUsed = 14;
+  currentWeeklyReset = new Date(Date.parse(weeklyReset) + 60 * 60_000).toISOString();
+  assert.equal((await runQuotaAutomationTick(db, adapters, config, quotaFetch, now + 60_000)).enabled, 0,
+    'weekly reset moving must not unpause a session still on its original reset');
+  sessionReset = new Date(Date.parse(pausedReset) + 2 * 60 * 60_000).toISOString();
+  assert.equal((await runQuotaAutomationTick(db, adapters, config, quotaFetch, now + 2 * 60_000)).enabled, 1);
+  assert.deepEqual({ ...db.prepare(`
+    SELECT desired_enabled, quota_auto_disabled, quota_session_reset_at, quota_reset_window
+    FROM provider_accounts WHERE id = ?
+  `).get(accountId) }, {
+    desired_enabled: 1, quota_auto_disabled: 0, quota_session_reset_at: null, quota_reset_window: null,
+  });
+  const auditEntry = db.prepare(`
+    SELECT detail FROM audit_log WHERE target_id = ? AND action = 'account.auto_enabled_quota'
+  `).get(String(accountId));
+  assert.equal(JSON.parse(auditEntry.detail).window, 'session');
+});
+
+test('migration recovers the paused window from matching audit history', async (t) => {
+  const { app, db, config, adapters } = await testApp();
+  t.after(() => { app.close(); db.close(); });
+  const ownerId = await seedUser(db, 'legacy-quota-owner');
+  const resetAt = '2030-01-01T04:00:00.000Z';
+  const accountId = Number(db.prepare(`
+    INSERT INTO provider_accounts
+      (owner_id, provider, upstream_subject, display_name, credential_envelope,
+       desired_enabled, quota_auto_disabled, quota_session_reset_at)
+    VALUES (?, 'codex', 'legacy-quota', 'Legacy pause', ?, 0, 1, ?)
+  `).run(ownerId, encryptJson({ accessToken: 'codex-access' }, config.encryptionKey), resetAt).lastInsertRowid);
+  db.prepare(`
+    INSERT INTO audit_log (action, target_type, target_id, detail)
+    VALUES ('account.auto_disabled_quota', 'account', ?, ?)
+  `).run(String(accountId), JSON.stringify({ window: 'session', resetAt }));
+  migrate(db);
+  assert.equal(db.prepare('SELECT quota_reset_window FROM provider_accounts WHERE id = ?')
+    .get(accountId).quota_reset_window, 'session');
+  const result = await runQuotaAutomationTick(db, adapters, config, { codex: async () => new Response(JSON.stringify({
+    rate_limit: {
+      primary_window: { used_percent: 14, reset_at: Date.parse('2030-01-01T06:00:00Z') / 1000 },
+      secondary_window: { used_percent: 2, reset_at: Date.parse('2030-01-08T00:00:00Z') / 1000 },
+    },
+  }), { status: 200 }) }, Date.parse('2030-01-01T01:00:00Z'));
+  assert.equal(result.enabled, 1);
+});
+
+test('quota automation never resumes without the window that caused the pause', async (t) => {
+  const { app, db, config, adapters } = await testApp();
+  t.after(() => { app.close(); db.close(); });
+  const ownerId = await seedUser(db, 'missing-paused-window');
+  const accountId = Number(db.prepare(`
+    INSERT INTO provider_accounts
+      (owner_id, provider, upstream_subject, display_name, credential_envelope,
+       desired_enabled, quota_auto_disabled, quota_session_reset_at, quota_reset_window)
+    VALUES (?, 'claude', 'missing-paused', 'Missing paused window', ?, 0, 1, ?, 'weekly')
+  `).run(ownerId, encryptJson({ accessToken: 'test' }, config.encryptionKey),
+    '2030-01-02T00:00:00Z').lastInsertRowid);
+  const quotaFetch = { claude: async () => new Response(JSON.stringify({
+    five_hour: { utilization: 0, resets_at: '2030-01-01T06:00:00Z' },
+  }), { status: 200 }) };
+  const result = await runQuotaAutomationTick(db, adapters, config, quotaFetch,
+    Date.parse('2030-01-03T00:00:00Z'));
+  assert.equal(result.enabled, 0);
+  assert.equal(db.prepare('SELECT desired_enabled FROM provider_accounts WHERE id = ?')
+    .get(accountId).desired_enabled, 0);
+});
+
+test('legacy pause without matching audit waits for its saved reset', async (t) => {
+  const { app, db, config, adapters } = await testApp();
+  t.after(() => { app.close(); db.close(); });
+  const ownerId = await seedUser(db, 'legacy-unknown-window');
+  const accountId = Number(db.prepare(`
+    INSERT INTO provider_accounts
+      (owner_id, provider, upstream_subject, display_name, credential_envelope,
+       desired_enabled, quota_auto_disabled, quota_session_reset_at)
+    VALUES (?, 'claude', 'legacy-unknown', 'Legacy unknown', ?, 0, 1, ?)
+  `).run(ownerId, encryptJson({ accessToken: 'test' }, config.encryptionKey),
+    '2030-01-02T00:00:00Z').lastInsertRowid);
+  const quotaFetch = { claude: async () => new Response(JSON.stringify({
+    seven_day: { utilization: 0, resets_at: '2030-01-08T00:00:00Z' },
+  }), { status: 200 }) };
+  const before = await runQuotaAutomationTick(db, adapters, config, quotaFetch,
+    Date.parse('2030-01-01T00:00:00Z'));
+  assert.equal(before.enabled, 0);
+  const after = await runQuotaAutomationTick(db, adapters, config, quotaFetch,
+    Date.parse('2030-01-02T00:00:01Z'));
+  assert.equal(after.enabled, 1);
+  assert.equal(db.prepare('SELECT desired_enabled FROM provider_accounts WHERE id = ?')
+    .get(accountId).desired_enabled, 1);
+});
+
+test('manual Sync cannot clear a quota pause when routers report active', async (t) => {
+  const { app, db, config, adapters } = await testApp();
+  t.after(() => { app.close(); db.close(); });
+  const ownerId = await seedUser(db, 'paused-sync-owner');
+  const accountId = Number(db.prepare(`
+    INSERT INTO provider_accounts
+      (owner_id, provider, upstream_subject, display_name, credential_envelope,
+       desired_enabled, quota_auto_disabled, quota_session_reset_at, quota_reset_window)
+    VALUES (?, 'claude', 'paused-sync', 'Paused sync', ?, 0, 1, ?, 'session')
+  `).run(ownerId, encryptJson({ accessToken: 'test' }, config.encryptionKey),
+    '2030-01-01T04:00:00Z').lastInsertRowid);
+  const auth = await login(app, 'paused-sync-owner');
+  const response = await app.inject({ method: 'POST', url: `/api/accounts/${accountId}/retry`,
+    headers: authHeaders(auth) });
+  assert.equal(response.statusCode, 200);
+  assert.deepEqual({ ...db.prepare(`
+    SELECT desired_enabled, quota_auto_disabled FROM provider_accounts WHERE id = ?
+  `).get(accountId) }, { desired_enabled: 0, quota_auto_disabled: 1 });
+  assert.deepEqual(db.prepare(`
+    SELECT router, sync_status FROM router_connections WHERE account_id = ? ORDER BY router
+  `).all(accountId).map((row) => ({ ...row })), [
+    { router: 'ninerouter', sync_status: 'disabled' },
+    { router: 'omniroute', sync_status: 'disabled' },
+  ]);
+  assert.equal(adapters.omniroute.calls.at(-1)[0], 'sync');
+});
+
+test('a failed resume sync cannot recover after quota drops again', async (t) => {
+  let routerDown = true;
+  const adapters = {
+    omniroute: fakeAdapter('omni', { sync: async (account) => {
+      if (routerDown && account.desired_enabled) throw new Error('router unavailable');
+      return `portal-${account.id}`;
+    } }),
+  };
+  const { app, db, config, adapters: routerAdapters } = await testApp({ adapters });
+  t.after(() => { app.close(); db.close(); });
+  const ownerId = await seedUser(db, 'failed-resume-owner');
+  db.prepare(`
+    INSERT INTO user_quota_settings (user_id, auto_disable, threshold_percent, auto_enable)
+    VALUES (?, 0, 20, 1)
+  `).run(ownerId);
+  const accountId = Number(db.prepare(`
+    INSERT INTO provider_accounts
+      (owner_id, provider, upstream_subject, display_name, credential_envelope,
+       desired_enabled, quota_auto_disabled, quota_session_reset_at, quota_reset_window)
+    VALUES (?, 'claude', 'failed-resume', 'Failed resume', ?, 0, 1, ?, 'session')
+  `).run(ownerId, encryptJson({ accessToken: 'test' }, config.encryptionKey),
+    '2030-01-01T04:00:00Z').lastInsertRowid);
+  let used = 0;
+  const quotaFetch = { claude: async () => new Response(JSON.stringify({
+    five_hour: { utilization: used, resets_at: '2030-01-01T06:00:00Z' },
+  }), { status: 200 }) };
+  await runQuotaAutomationTick(db, routerAdapters, config, quotaFetch, Date.parse('2030-01-01T01:00:00Z'));
+  assert.equal(db.prepare('SELECT quota_auto_disabled FROM provider_accounts WHERE id = ?')
+    .get(accountId).quota_auto_disabled, 1);
+
+  used = 100;
+  routerDown = false;
+  await runQuotaAutomationTick(db, routerAdapters, config, quotaFetch, Date.parse('2030-01-01T01:01:00Z'));
+  assert.deepEqual({ ...db.prepare(`
+    SELECT desired_enabled, quota_auto_disabled FROM provider_accounts WHERE id = ?
+  `).get(accountId) }, { desired_enabled: 0, quota_auto_disabled: 1 });
+  assert.deepEqual(db.prepare(`
+    SELECT router, sync_status FROM router_connections WHERE account_id = ? ORDER BY router
+  `).all(accountId).map((row) => ({ ...row })), [
+    { router: 'ninerouter', sync_status: 'disabled' },
+    { router: 'omniroute', sync_status: 'disabled' },
+  ]);
+});
+
+test('a partial resume is cancelled when quota becomes unavailable', async (t) => {
+  let routerDown = true;
+  const { app, db, config, adapters } = await testApp({ adapters: {
+    omniroute: fakeAdapter('omni', { sync: async (account) => {
+      if (routerDown && account.desired_enabled) throw new Error('router unavailable');
+      return `portal-${account.id}`;
+    } }),
+  } });
+  t.after(() => { app.close(); db.close(); });
+  const ownerId = await seedUser(db, 'unavailable-resume-owner');
+  const accountId = Number(db.prepare(`
+    INSERT INTO provider_accounts
+      (owner_id, provider, upstream_subject, display_name, credential_envelope,
+       desired_enabled, quota_auto_disabled, quota_session_reset_at, quota_reset_window)
+    VALUES (?, 'claude', 'unavailable-resume', 'Unavailable resume', ?, 0, 1, ?, 'session')
+  `).run(ownerId, encryptJson({ accessToken: 'test' }, config.encryptionKey),
+    '2030-01-01T04:00:00Z').lastInsertRowid);
+  const recovered = { claude: async () => new Response(JSON.stringify({
+    five_hour: { utilization: 0, resets_at: '2030-01-01T06:00:00Z' },
+  }), { status: 200 }) };
+  await runQuotaAutomationTick(db, adapters, config, recovered, Date.parse('2030-01-01T01:00:00Z'));
+  routerDown = false;
+  const unavailable = { claude: async () => new Response('', { status: 503 }) };
+  await runQuotaAutomationTick(db, adapters, config, unavailable, Date.parse('2030-01-01T01:01:00Z'));
+  assert.deepEqual({ ...db.prepare(`
+    SELECT desired_enabled, quota_auto_disabled, quota_session_reset_at, quota_reset_window
+    FROM provider_accounts WHERE id = ?
+  `).get(accountId) }, {
+    desired_enabled: 0, quota_auto_disabled: 1,
+    quota_session_reset_at: '2030-01-01T04:00:00Z', quota_reset_window: 'session',
+  });
+  assert.deepEqual(db.prepare(`
+    SELECT router, sync_status FROM router_connections WHERE account_id = ? ORDER BY router
+  `).all(accountId).map((row) => ({ ...row })), [
+    { router: 'ninerouter', sync_status: 'disabled' },
+    { router: 'omniroute', sync_status: 'disabled' },
+  ]);
+});
+
+test('router sync failures stay pending until both routers confirm quota transition', async (t) => {
+  let routerDown = true;
+  const { app, db, config, adapters } = await testApp({ adapters: {
+    omniroute: fakeAdapter('omni', { sync: async (account) => {
+      if (routerDown) throw new Error(`router unavailable for ${account.desired_enabled}`);
+      return `portal-${account.id}`;
+    } }),
+  } });
+  t.after(() => { app.close(); db.close(); });
+  const ownerId = await seedUser(db, 'router-sync-owner');
+  const accountId = Number(db.prepare(`
+    INSERT INTO provider_accounts (owner_id, provider, upstream_subject, display_name, credential_envelope)
+    VALUES (?, 'claude', 'router-sync', 'Router sync', ?)
+  `).run(ownerId, encryptJson({ accessToken: 'test' }, config.encryptionKey)).lastInsertRowid);
+  let used = 100;
+  let resetAt = '2030-01-01T04:00:00Z';
+  const quotaFetch = { claude: async () => new Response(JSON.stringify({
+    five_hour: { utilization: used, resets_at: resetAt },
+  }), { status: 200 }) };
+  const now = Date.parse('2030-01-01T01:00:00Z');
+  assert.equal((await runQuotaAutomationTick(db, adapters, config, quotaFetch, now)).failed, 1);
+  assert.deepEqual(db.prepare('SELECT action FROM audit_log WHERE target_id = ? ORDER BY id')
+    .all(String(accountId)).map((row) => row.action), ['account.quota_pause_sync_failed']);
+
+  routerDown = false;
+  await runQuotaAutomationTick(db, adapters, config, quotaFetch, now + 60_000);
+  assert.deepEqual(db.prepare('SELECT action FROM audit_log WHERE target_id = ? ORDER BY id')
+    .all(String(accountId)).map((row) => row.action), [
+    'account.quota_pause_sync_failed', 'account.auto_disabled_quota',
+  ]);
+
+  routerDown = true;
+  used = 0;
+  resetAt = '2030-01-01T06:00:00Z';
+  assert.equal((await runQuotaAutomationTick(db, adapters, config, quotaFetch, now + 120_000)).failed, 1);
+  assert.equal(db.prepare('SELECT quota_auto_disabled FROM provider_accounts WHERE id = ?')
+    .get(accountId).quota_auto_disabled, 1);
+  routerDown = false;
+  await runQuotaAutomationTick(db, adapters, config, quotaFetch, now + 180_000);
+  assert.deepEqual(db.prepare('SELECT action FROM audit_log WHERE target_id = ? ORDER BY id')
+    .all(String(accountId)).map((row) => row.action), [
+    'account.quota_pause_sync_failed', 'account.auto_disabled_quota',
+    'account.quota_resume_sync_failed', 'account.auto_enabled_quota',
+  ]);
+  assert.equal(db.prepare('SELECT quota_auto_disabled FROM provider_accounts WHERE id = ?')
+    .get(accountId).quota_auto_disabled, 0);
 });
 
 test('quota automation disables an account when its weekly window is depleted', async (t) => {
@@ -896,6 +1220,25 @@ test('Quota Tracker is GET-only and cannot mutate provider state', async (t) => 
   assert.equal((await app.inject({ method: 'POST', url: `/api/accounts/${result.lastInsertRowid}/quota`, headers: authHeaders(auth) })).statusCode, 404);
 });
 
+test('quota endpoint distinguishes provider rate limiting from router availability', async (t) => {
+  const { app, db, config } = await testApp({ oauthFetch: {
+    claudeQuota: async () => new Response('', { status: 429 }),
+  } });
+  t.after(() => { app.close(); db.close(); });
+  const ownerId = await seedUser(db, 'quota-rate-limit-owner');
+  const accountId = Number(db.prepare(`
+    INSERT INTO provider_accounts (owner_id, provider, upstream_subject, display_name, credential_envelope)
+    VALUES (?, 'claude', 'quota-rate-limit', 'Quota rate limit', ?)
+  `).run(ownerId, encryptJson({ accessToken: 'test' }, config.encryptionKey)).lastInsertRowid);
+  const auth = await login(app, 'quota-rate-limit-owner');
+  const response = await app.inject({ method: 'GET', url: `/api/accounts/${accountId}/quota`,
+    headers: { cookie: auth.cookie } });
+  assert.equal(response.statusCode, 429);
+  assert.match(response.json().error, /Provider quota rate limited \(HTTP 429\)/);
+  assert.equal(db.prepare('SELECT desired_enabled FROM provider_accounts WHERE id = ?')
+    .get(accountId).desired_enabled, 1);
+});
+
 test('quota uses the credential belonging to the requested account and admins can inspect every owner', async (t) => {
   const { app, db, config } = await testApp({ oauthFetch: {
     claudeQuota: async (_url, init) => {
@@ -971,8 +1314,8 @@ test('refresh tick keeps a minimum gap between two refreshes of the same account
   assert.deepEqual(refreshCalls, []);
   assert.equal(db.prepare('SELECT token_version FROM provider_accounts WHERE id = ?').get(accountId).token_version, 1);
 
-  // 11 minutes after the last refresh the account becomes eligible again.
-  assert.equal(await runRefreshTick(db, adapters, config, refreshFetch, now + 7 * 60_000), 1);
+  // The minimum gap has passed, and the token has also reached half its lifetime.
+  assert.equal(await runRefreshTick(db, adapters, config, refreshFetch, now + 14 * 60_000), 1);
   assert.deepEqual(refreshCalls, ['refresh-gap']);
   assert.equal(db.prepare('SELECT token_version FROM provider_accounts WHERE id = ?').get(accountId).token_version, 2);
 });

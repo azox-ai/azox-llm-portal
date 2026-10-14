@@ -66,9 +66,13 @@ export async function reconcileAccount(db, adapters, config, accountId) {
   return summary;
 }
 
-export async function pullRouterState(db, adapters, accountId) {
+export async function pullRouterState(db, adapters, accountId, config) {
   const account = db.prepare('SELECT * FROM provider_accounts WHERE id = ?').get(accountId);
   if (!account) throw new Error('Account not found');
+  if (account.quota_auto_disabled === 1 && account.desired_enabled === 0) {
+    markPending(db, accountId);
+    return reconcileAccount(db, adapters, config, accountId);
+  }
   const summary = {};
 
   for (const router of ROUTERS) {

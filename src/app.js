@@ -106,7 +106,7 @@ export async function buildApp(options = {}) {
   };
   const stopQuotaAutomationScheduler = options.startScheduler === false
     ? () => {}
-    : startQuotaAutomationScheduler(db, adapters, config, quotaFetch);
+    : startQuotaAutomationScheduler(db, adapters, config, quotaFetch, app.log);
 
   // The shell must never be cached: it is the only document that knows which
   // fingerprinted asset URLs the current build uses.

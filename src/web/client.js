@@ -147,8 +147,9 @@ async function loadQuotas() {
   await Promise.all(state.accounts.map(async (account) => {
     try {
       state.quotas[account.id] = await api('/api/accounts/' + account.id + '/quota');
-    } catch {
-      state.quotas[account.id] = { plan: null, quotas: {}, error: 'Quota unavailable. Retrying within 5 min.' };
+    } catch (error) {
+      state.quotas[account.id] = { plan: null, quotas: {},
+        error: error.message || 'Quota unavailable. Retrying within 5 min.' };
     }
   }));
   // The background quota policy may have changed desired/router state while
@@ -385,7 +386,9 @@ function connectionCard(account) {
 function quotaStrip(account) {
   const quota = state.quotas[account.id];
   if (!quota) return '<div class="connection-quotas"><span class="quota-hint">Loading quota…</span></div>';
-  if (quota.error) return '<div class="connection-quotas"><span class="quota-hint">Quota check failed.</span></div>';
+  if (quota.error && (account.enabled || account.quotaAutoDisabled)) return '';
+  if (quota.error) return '<div class="connection-quotas"><span class="quota-hint">' +
+    esc(quota.error) + '</span></div>';
   const entries = quotaEntries(account);
   if (!entries.length) return '<div class="connection-quotas"><span class="quota-hint">Upstream returned no quota window.</span></div>';
   return '<div class="connection-quotas"><div class="quota-section-title">' + entries.length +
