@@ -1,5 +1,19 @@
 # Changelog
 
+## v1.3.12 — 2026-11-04
+
+### Đóng gói và runtime
+
+- Đóng gói trực tiếp từ source `v1.3.11`, bao gồm các sửa lỗi quota/refresh đã tích hợp và model catalog/family/tier; không phụ thuộc image wrapper chỉ có trên một máy.
+- Dùng Node `22.23.4-alpine` cho cả stage cài dependencies và stage runtime.
+- Cập nhật lockfile trong dải semver hiện có: audit production dependencies không còn cảnh báo. Không thay đổi logic ứng dụng hoặc schema.
+
+### Kiểm chứng và triển khai
+
+- `npm run check`: ESLint pass, 90/90 tests pass. `docker build --pull` thành công; runtime báo Node v22.23.4.
+- Chưa kiểm thử migration trên bản sao SQLite thực tế hoặc E2E với provider thật. Backup dữ liệu, thử migration và kiểm tra readiness trước khi triển khai; release này không tự thay đổi container đang chạy.
+- Giữ `package.json` version `1.0.0` theo quy ước hiện có; Git tag là phiên bản release.
+
 ## v1.3.11 — 2026-10-14
 
 Release source gồm quota-fix đã chạy trên dev (snapshot `62aba01093edc14a33fc5dc914d894bf251652fc`) tích hợp với tám commit mới trên `main` từ `v1.3.10` (`d0cfb3cc`). Tag release đặt trên merge commit PR, **không** trùng artifact Portal dev cũ; Portal dev chưa rebuild/redeploy trong đợt này.
