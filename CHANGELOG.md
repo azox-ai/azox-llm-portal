@@ -2,9 +2,17 @@
 
 ## v1.3.12 — 2026-11-04
 
-- Build Portal trực tiếp từ source release `v1.3.11` (đã tích hợp các quota/refresh fix của bản dev đang chạy và model catalog/family/tier), thay vì phụ thuộc image wrapper cục bộ `zbs2-security/base-llmproxy-portal:20261022`.
-- Dùng Node `22.23.4-alpine` nhất quán ở cả stage cài dependencies và stage runtime; cập nhật lockfile trong dải semver hiện có để loại bỏ cảnh báo audit ở production dependencies. Không thay đổi logic ứng dụng hoặc schema.
-- Không đổi `package.json` version `1.0.0` (không dùng làm release semver). Chưa deploy; cần kiểm migration trên bản sao SQLite và backup trước khi thay image production.
+### Đóng gói và runtime
+
+- Đóng gói trực tiếp từ source `v1.3.11`, bao gồm các sửa lỗi quota/refresh đã tích hợp và model catalog/family/tier; không phụ thuộc image wrapper chỉ có trên một máy.
+- Dùng Node `22.23.4-alpine` cho cả stage cài dependencies và stage runtime.
+- Cập nhật lockfile trong dải semver hiện có: audit production dependencies không còn cảnh báo. Không thay đổi logic ứng dụng hoặc schema.
+
+### Kiểm chứng và triển khai
+
+- `npm run check`: ESLint pass, 90/90 tests pass. `docker build --pull` thành công; runtime báo Node v22.23.4.
+- Chưa kiểm thử migration trên bản sao SQLite thực tế hoặc E2E với provider thật. Backup dữ liệu, thử migration và kiểm tra readiness trước khi triển khai; release này không tự thay đổi container đang chạy.
+- Giữ `package.json` version `1.0.0` theo quy ước hiện có; Git tag là phiên bản release.
 
 ## v1.3.11 — 2026-10-14
 
