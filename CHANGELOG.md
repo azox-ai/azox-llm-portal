@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.3.12 — 2026-11-04
+
+- Build Portal trực tiếp từ source release `v1.3.11` (đã tích hợp các quota/refresh fix của bản dev đang chạy và model catalog/family/tier), thay vì phụ thuộc image wrapper cục bộ `zbs2-security/base-llmproxy-portal:20261022`.
+- Dùng Node `22.23.4-alpine` nhất quán ở cả stage cài dependencies và stage runtime; cập nhật lockfile trong dải semver hiện có để loại bỏ cảnh báo audit ở production dependencies. Không thay đổi logic ứng dụng hoặc schema.
+- Không đổi `package.json` version `1.0.0` (không dùng làm release semver). Chưa deploy; cần kiểm migration trên bản sao SQLite và backup trước khi thay image production.
+
 ## v1.3.11 — 2026-10-14
 
 Release source gồm quota-fix đã chạy trên dev (snapshot `62aba01093edc14a33fc5dc914d894bf251652fc`) tích hợp với tám commit mới trên `main` từ `v1.3.10` (`d0cfb3cc`). Tag release đặt trên merge commit PR, **không** trùng artifact Portal dev cũ; Portal dev chưa rebuild/redeploy trong đợt này.
