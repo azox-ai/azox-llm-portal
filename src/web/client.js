@@ -428,10 +428,11 @@ function quotaStrip(account) {
       const remaining = quotaRemaining(value.remaining);
       const level = !Number.isFinite(remaining) ? 'unknown' : remaining <= 20 ? 'low' : remaining <= 50 ? 'medium' : 'healthy';
       return '<div class="quota-meter ' + level + '"><div class="quota-meter-head"><span><i></i>' +
-        esc(quotaName(name, account.provider, quota.plan)) + '</span><strong>' + quotaPercent(value.remaining) + ' remaining</strong></div>' +
+        esc(quotaName(name, account.provider, quota.plan)) + '</span><strong>' +
+        (name === 'credits' ? quotaPercent(value.used) + ' used' : quotaPercent(value.remaining) + ' remaining') + '</strong></div>' +
         '<div class="progress" role="progressbar" aria-label="' + esc(quotaName(name, account.provider, quota.plan)) +
         ' remaining" aria-valuemin="0" aria-valuemax="100"' + (Number.isFinite(remaining) ? ' aria-valuenow="' + remaining + '"' : '') + '>' +
-        '<span style="width:' + (Number.isFinite(remaining) ? remaining : 0) + '%"></span></div><small>' + quotaResetLabel(value.resetAt, name) + '</small></div>';
+        '<span style="width:' + (Number.isFinite(remaining) ? remaining : 0) + '%"></span></div><small>' + (name === 'credits' ? quotaPercent(value.remaining) + ' remaining · Monthly credit usage' : quotaResetLabel(value.resetAt, name)) + '</small></div>';
     }).join('') +
     '</div>';
 }
@@ -452,7 +453,7 @@ function quotaPercent(value) {
 }
 
 function quotaResetLabel(resetAt, name) {
-  if (name === 'credits' && !resetAt) return 'Credit usage · no scheduled reset';
+  if (name === 'credits') return 'Monthly credit usage';
   if (!resetAt) return 'Reset: —';
   const resetMs = Date.parse(resetAt);
   if (!Number.isFinite(resetMs)) return 'Reset: —';
