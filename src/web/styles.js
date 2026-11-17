@@ -191,8 +191,8 @@ tr:hover td{background:var(--bg-alt)}
 .connection-filter-chip{display:inline-flex;align-items:center;gap:5px;width:auto;margin:0;padding:6px 11px;border:1px solid var(--border-strong);border-radius:999px;background:var(--surface);color:var(--muted);font:inherit;font-size:12px;font-weight:500;cursor:pointer}
 .connection-filter-chip.active{border-color:var(--brand);background:var(--brand-soft);color:var(--brand)}
 .connection-filter-chip.active::before{content:'✓';font-size:10px;font-weight:700}
-.connections-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));align-items:start;gap:14px;padding:18px;background:var(--bg-alt)}
-.connection-card{min-width:0;border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--surface);overflow:hidden;box-shadow:var(--shadow-soft)}
+.connections-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));align-items:stretch;gap:14px;padding:18px;background:var(--bg-alt)}
+.connection-card{display:flex;flex-direction:column;min-width:0;border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--surface);overflow:hidden;box-shadow:var(--shadow-soft)}
 .connection-card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:15px 16px;border-bottom:1px solid var(--border-subtle)}
 .connection-card .account-name{min-width:0;align-items:flex-start}
 .connection-card .account-name>div{min-width:0}
@@ -206,7 +206,7 @@ tr:hover td{background:var(--bg-alt)}
 .connection-statuses{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;padding:12px 16px;border-bottom:1px solid var(--border-subtle);background:var(--bg-alt)}
 .connection-statuses>div{min-width:0}
 .connection-statuses>div>span:first-child{display:block;margin-bottom:5px;color:var(--muted);font-size:10px;font-weight:800;letter-spacing:.5px;text-transform:uppercase}
-.connection-token{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 16px;border-top:1px solid var(--border-subtle);font-size:11px}
+.connection-token{margin-top:auto;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 16px;border-top:1px solid var(--border-subtle);font-size:11px}
 .connection-token span{color:var(--muted)}
 .connection-token strong{text-align:right;font-size:11px;overflow-wrap:anywhere}
 .quota-policy-warning{margin:12px 16px 0;padding:8px 10px;border:1px solid rgba(245,158,11,.38);border-radius:var(--radius);background:rgba(245,158,11,.1);color:var(--warning-text);font-size:12px;font-weight:700;line-height:1.45;overflow-wrap:anywhere}
