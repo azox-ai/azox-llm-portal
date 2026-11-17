@@ -673,3 +673,16 @@ test('every operation result is a top-center toast that hides after 3 seconds', 
   assert.ok(Number(rootRule[1].match(/z-index:(\d+)/)[1]) > 50, 'toast must sit above modals');
   assert.match(styles, /prefers-reduced-motion:reduce\)\{[^}]*\.toast\{animation:none\}/);
 });
+
+
+test('credits display monthly used percentage instead of a reset date', () => {
+  const quota = quotaClientHelpers(Date.parse('2026-11-17T00:00:00Z'));
+  const account = { id: 4, provider: 'claude', displayName: 'Credits', owner: 'test', enabled: true,
+    status: 'active', routers: {}, quotaPolicy: { thresholdPercent: 0 } };
+  quota.state.quotas[4] = { quotas: { credits: { used: 4.476, remaining: 95.524, resetAt: null } } };
+  const card = quota.connectionCard(account);
+  assert.match(card, /4% used/);
+  assert.match(card, /96% remaining/);
+  assert.match(card, /Monthly credit usage/);
+  assert.doesNotMatch(card, /Reset:|no scheduled reset|Quota unknown/);
+});
