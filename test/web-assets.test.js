@@ -285,7 +285,9 @@ test('served assets contain the 9Router-inspired portal shell', () => {
   assert.match(styles, /\.modal-overlay/);
   // Connections reflow from a two-column dashboard grid to one column.
   assert.match(styles, /\.connections-grid\{display:grid;grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
-  assert.match(styles, /\.connections-grid\{[^}]*align-items:start/);
+  assert.match(styles, /\.connections-grid\{[^}]*align-items:stretch/);
+  assert.match(styles, /\.connection-card\{display:flex;flex-direction:column/);
+  assert.match(styles, /\.connection-token\{margin-top:auto/);
   assert.match(styles, /\.connection-toolbar\{display:flex;align-items:center;gap:10px;flex-wrap:wrap\}/);
   assert.match(styles, /\.connection-filter-chip/);
   assert.match(styles, /@media\(max-width:1120px\)\{\s*\.connections-grid\{grid-template-columns:1fr\}/);
