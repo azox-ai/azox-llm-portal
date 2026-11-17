@@ -21,12 +21,15 @@ function quotaHasReset(account, windows, now) {
     return Boolean(account.quota_reset_window && pausedWindow
       && Date.parse(pausedWindow.resetAt || '') > previousReset);
   }
+  // The credits response has no reset timestamp to compare; do not invent one. The caller already
+  // verified it is no longer blocked; that is the only evidence available.
+  if (account.quota_reset_window === 'credits' && pausedWindow) return true;
   // Both supported providers normally return a reset timestamp. If one omits
   // it, only a fully replenished window is strong enough evidence to re-enable.
   return windows.every((window) => window.remaining >= 99.9);
 }
 
-const QUOTA_WINDOW_PRIORITY = ['weekly', 'session'];
+const QUOTA_WINDOW_PRIORITY = ['weekly', 'session', 'credits'];
 
 function quotaWindowsByPriority(quota) {
   const priority = new Map(QUOTA_WINDOW_PRIORITY.map((name, index) => [name, index]));

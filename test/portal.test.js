@@ -1513,3 +1513,50 @@ test('quota automation applies the effective policy for each account owner', asy
   assert.equal(db.prepare('SELECT desired_enabled FROM provider_accounts WHERE id = ?').get(customAccountId).desired_enabled, 0);
   assert.equal(db.prepare('SELECT desired_enabled FROM provider_accounts WHERE id = ?').get(defaultAccountId).desired_enabled, 1);
 });
+
+
+test('Claude credits fallback only applies without subscription windows', async () => {
+  const read = data => fetchQuota('claude', { accessToken: 'test' }, async () =>
+    new Response(JSON.stringify(data), { status: 200 }));
+  const extra_usage = { is_enabled: true, utilization: 4.476, monthly_limit: 100 };
+  const result = await read({ five_hour: null, seven_day: null, extra_usage });
+  assert.deepEqual(result.quotas.credits, { used: 4.476, remaining: 95.524, resetAt: null });
+  assert.equal((await read({ five_hour: { utilization: 20 }, extra_usage })).quotas.credits, undefined);
+  for (const extra of [null, {}, { is_enabled: false, utilization: 10 },
+    { is_enabled: true, utilization: null }, { is_enabled: true, utilization: 'bad' }]) {
+    assert.deepEqual((await read({ extra_usage: extra })).quotas, {});
+  }
+  assert.equal((await read({ extra_usage: { is_enabled: true, utilization: 101 } })).quotas.credits.remaining, 0);
+});
+
+test('credit quota automation pauses at the threshold and resumes after a top-up', async (t) => {
+  const now = Date.parse('2030-01-01T00:00:00.000Z');
+  let utilization = 80;
+  const { app, db, config, adapters } = await testApp();
+  t.after(() => { app.close(); db.close(); });
+  const ownerId = await seedUser(db, 'credits-owner');
+  const accountId = Number(db.prepare(`
+    INSERT INTO provider_accounts
+      (owner_id, provider, upstream_subject, display_name, credential_envelope)
+    VALUES (?, 'claude', 'credits-subject', 'Credits Claude', ?)
+  `).run(ownerId, encryptJson({ accessToken: 'credits-access' }, config.encryptionKey)).lastInsertRowid);
+  const quotaFetch = {
+    claude: async () => new Response(JSON.stringify({
+      five_hour: null, seven_day: null, extra_usage: { is_enabled: true, utilization },
+    }), { status: 200 }),
+  };
+
+  assert.equal((await runQuotaAutomationTick(db, adapters, config, quotaFetch, now)).disabled, 1);
+  assert.deepEqual({ ...db.prepare(`
+    SELECT desired_enabled, quota_auto_disabled, quota_reset_window FROM provider_accounts WHERE id = ?
+  `).get(accountId) }, { desired_enabled: 0, quota_auto_disabled: 1, quota_reset_window: 'credits' });
+
+  // Credits have no reset timestamp: resumed only once usage is above threshold again.
+  utilization = 90;
+  assert.equal((await runQuotaAutomationTick(db, adapters, config, quotaFetch, now + 60_000)).enabled, 0);
+  utilization = 5;
+  assert.equal((await runQuotaAutomationTick(db, adapters, config, quotaFetch, now + 120_000)).enabled, 1);
+  assert.deepEqual({ ...db.prepare(`
+    SELECT desired_enabled, quota_auto_disabled, quota_reset_window FROM provider_accounts WHERE id = ?
+  `).get(accountId) }, { desired_enabled: 1, quota_auto_disabled: 0, quota_reset_window: null });
+});

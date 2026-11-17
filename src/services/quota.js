@@ -47,6 +47,29 @@ function codexWindow(window) {
   };
 }
 
+/**
+ * Accounts without a Claude Code subscription return `null` for both
+ * `five_hour` and `seven_day` but still report spend through `extra_usage`
+ * (credits with a monthly limit). Without this fallback the browser shows
+ * "Quota unknown" for a perfectly usable account, and the automation
+ * scheduler skips it entirely because it has no window to compare.
+ *
+ * `extra_usage` carries no reset timestamp in the observed response, so we
+ * never invent a monthly reset. The window reports `resetAt: null` and the
+ * scheduler treats "above threshold" as sufficient evidence to resume.
+ */
+function creditsWindow(extra) {
+  if (!extra || typeof extra !== 'object' || extra.is_enabled !== true) return null;
+  const used = typeof extra.utilization === 'number' && Number.isFinite(extra.utilization)
+    ? extra.utilization : null;
+  if (used === null) return null;
+  return {
+    used,
+    remaining: Math.max(0, 100 - used),
+    resetAt: null,
+  };
+}
+
 function requireQuotaResponse(response) {
   if (response.ok) return;
   const error = new Error(`Quota upstream returned ${response.status}`);
@@ -70,6 +93,10 @@ export async function fetchQuota(provider, tokenSet, fetchImpl = fetch) {
     const weekly = quotaWindow(data.seven_day);
     if (session) quotas.session = session;
     if (weekly) quotas.weekly = weekly;
+    if (!session && !weekly) {
+      const credits = creditsWindow(data.extra_usage);
+      if (credits) quotas.credits = credits;
+    }
     return { plan: data.plan_type || 'Claude', quotas };
   }
 
