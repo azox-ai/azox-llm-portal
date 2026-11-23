@@ -1,0 +1,10 @@
+target/
+web/node_modules/
+web/dist/
+data/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+*.env
+*.log
+__pycache__/

@@ -1,0 +1,45 @@
+.res-page .res-note { margin: 0; padding: .75rem 1rem; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-raised); color: var(--muted); font-size: .9rem; }
+.res-toolbar, .res-filters { display: flex; flex-wrap: wrap; align-items: center; gap: .65rem; }
+.res-toolbar { justify-content: space-between; }
+.res-filters { flex: 1 1 330px; }
+.res-filters input { flex: 1 1 200px; max-width: 360px; }
+.res-filters select { flex: 0 1 170px; }
+.res-table-wrap { background: var(--surface); }
+.res-table { min-width: 720px; }
+.res-table-wide { min-width: 1200px; }
+.res-table td { overflow-wrap: anywhere; }
+.res-primary { font-weight: 700; }
+.res-sub { display: block; margin-top: .2rem; color: var(--muted); font-size: .75rem; }
+.res-url { max-width: 260px; }
+.res-inline-badge { display: flex; width: fit-content; margin-top: .35rem; }
+.res-status-stack { display: grid; justify-items: start; gap: .35rem; }
+.res-actions-col { min-width: 165px; }
+.res-actions-col .actions { flex-wrap: nowrap; }
+.res-readonly, .res-count { color: var(--muted); font-size: .85rem; }
+.res-count { margin-top: .65rem; }
+.res-expired { color: var(--danger); }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+.res-modal { width: min(100%, 720px); }
+.res-modal-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 1.25rem; }
+.res-modal-head h3 { margin: 0; }
+.res-form { display: grid; gap: 1rem; }
+.res-form p { margin: 0; }
+.res-form-actions { justify-content: flex-end; }
+.res-check { display: flex; align-items: center; gap: .55rem; font-weight: 650; }
+.res-chip-list { display: flex; flex-wrap: wrap; gap: .4rem 1.6rem; margin: 0; padding-left: 1.4rem; }
+.res-model-editor { display: grid; gap: .75rem; }
+.res-model-list { display: grid; gap: .5rem; margin: 0; padding-left: 1.5rem; }
+.res-model-list li { padding-left: .25rem; }
+.res-model-list li > .actions { display: inline-flex; margin-left: .75rem; vertical-align: middle; }
+.res-model-name { overflow-wrap: anywhere; }
+.res-add-row { display: flex; align-items: center; gap: .5rem; }
+.res-add-row input { flex: 1 1 auto; }
+.res-add-row button { flex: 0 0 auto; }
+@media (max-width: 600px) {
+  .res-toolbar, .res-filters { align-items: stretch; }
+  .res-toolbar > .actions { width: 100%; }
+  .res-filters input, .res-filters select { flex: 1 1 100%; max-width: none; }
+  .res-add-row { flex-wrap: wrap; }
+  .res-add-row input { flex-basis: 100%; }
+  .res-model-list li > .actions { display: flex; margin: .35rem 0 0; }
+}
